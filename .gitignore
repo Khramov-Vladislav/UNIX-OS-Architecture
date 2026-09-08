@@ -1,0 +1,5 @@
+# settings vm
+/vm
+
+# MacOs
+.DS_Store
