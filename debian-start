@@ -1,0 +1,28 @@
+#!/bin/bash
+
+VM_NAME="debian13"
+SSH_HOST="localhost"
+SSH_PORT="2222"
+SSH_USER="vlad"
+
+if ! VBoxManage list runningvms | grep -q "\"$VM_NAME\""; then
+    echo "Starting $VM_NAME..."
+
+    VBoxManage startvm "$VM_NAME" --type headless || {
+        echo "Failed to start $VM_NAME."
+        exit 1
+    }
+else
+    echo "$VM_NAME is already running."
+fi
+
+echo "Waiting for SSH..."
+
+until nc -z "$SSH_HOST" "$SSH_PORT" 2>/dev/null; do
+    sleep 1
+done
+
+echo "SSH is ready."
+echo "Connecting..."
+
+ssh "$SSH_USER@$SSH_HOST" -p "$SSH_PORT"

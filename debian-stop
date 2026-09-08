@@ -1,0 +1,13 @@
+#!/bin/bash
+
+VM_NAME="debian13"
+
+if VBoxManage list runningvms | grep -q "\"$VM_NAME\""; then
+    echo "Stopping $VM_NAME..."
+
+    VBoxManage controlvm "$VM_NAME" acpipowerbutton
+
+    echo "$VM_NAME is shutting down."
+else
+    echo "$VM_NAME is not running."
+fi
