@@ -3,3 +3,6 @@
 
 # MacOs
 .DS_Store
+
+# Markdown
+markdown_rules.md
