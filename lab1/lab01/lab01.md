@@ -243,13 +243,13 @@ UID, GID и идентификаторы вторичных групп. Прим
 
 `sudo passwd vinnie` - установка пароля для нового пользователя
 
-![vinnie id](<fig/07 vinnie id.png>)
+![vinnie id](fig/07%20vinnie%20id.png)
 
 2. При помощи команды: exit вернитесь в контекст текущего пользователя student,
 убедитесь в этом, проверив его идентификаторы UID, GID и идентификаторы вторичных
 групп:
 
-![vlad id](<fig/07 vlad id.png>)
+![vlad id](fig/07%20vlad%20id.png)
 
 ## Упражнение 1.8. Общение между пользователями вычислительной системы
 
@@ -319,6 +319,16 @@ vinnie, проследите за появляющимися на термина
 
 **Сообщения доходят только до терминалов, открытых в VB.**
 
-![wall vlad](<fig/08 wall vlad.png>)
+![08 wall vinnie.png](fig/08%20wall%20vinnie.png)
+![08 wall vlad.png](fig/08%20wall%20vlad.png)
 
-![wall vinnie](<fig/08 wall vinnie.png>)
+### Исправление замечаний по лабораторной работе
+Проблему с неисправностью write и mesg помогли решить следующие команды:
+```bash
+chrg tty /urs/bin/write
+chmod g+5 /usr/bin/write
+mesg y: chmod g+w /dev/pts/0
+mesg n: chmod g-w /dev/pts/0
+
+write: echo Privet > /dev/tty1
+```
