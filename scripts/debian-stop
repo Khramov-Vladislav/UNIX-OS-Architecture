@@ -1,13 +1,24 @@
 #!/bin/bash
 
 VM_NAME="debian13"
+SSH_HOST="localhost"
+SSH_PORT="2222"
+SSH_USER="vlad"
 
-if VBoxManage list runningvms | grep -q "\"$VM_NAME\""; then
-    echo "Stopping $VM_NAME..."
-
-    VBoxManage controlvm "$VM_NAME" acpipowerbutton
-
-    echo "$VM_NAME is shutting down."
-else
+if ! VBoxManage list runningvms | grep -q "\"$VM_NAME\""; then
     echo "$VM_NAME is not running."
+    exit 0
 fi
+
+echo "Stopping $VM_NAME..."
+
+ssh -t "$SSH_USER@$SSH_HOST" -p "$SSH_PORT" \
+    "sudo -n systemctl poweroff" 2>/dev/null
+
+echo "Waiting for $VM_NAME to stop..."
+
+while VBoxManage list runningvms | grep -q "\"$VM_NAME\""; do
+    sleep 1
+done
+
+echo "$VM_NAME stopped."
