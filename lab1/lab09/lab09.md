@@ -1,345 +1,283 @@
-# Лабораторная работа 9. Сетевое окружение UNIX
+[//]: # (Работа выполнена)
 
-> **Примечание к оформлению.** Выводы команд ниже — типовые для Debian 13. Перед сдачей выполните команды на своей
-> машине, сделайте скриншоты и замените ими заглушки `fig/...`, а IP-адрес соседа `192.168.56.102` и имя
-> пользователя соседа замените на реальные. Если соседа нет, подключайтесь ко второй своей виртуальной машине или к
-> своей же ВМ через проброшенный порт (`ssh -p 2222 vlad@127.0.0.1`).
+# Лабораторная работа 9. Сетевое окружение UNIX
 
 ## Упражнение 9.1. Удаленный доступ в систему с помощью протокола SSH
 
-> **SSH** (Secure Shell) — протокол защищённого удалённого доступа. Весь трафик (включая пароль) шифруется, в отличие
-> от устаревших `telnet` и `rsh`. Серверная часть — демон `sshd` (в `ps aux` из лаб. 8 это
-> `/usr/sbin/sshd -D`, порт 22), клиентская — команда `ssh`.
+### 1. При помощи команды ssh подключитесь к операционной системе соседа:
 
-### 1. При помощи команды ssh подключитесь к операционной системе соседа
-
-Узнаём IP-адрес соседа (на его машине) и проверяем, что демон работает:
+> SSH (Secure Shell) — протокол удалённого входа поверх TCP, порт 22. Весь трафик шифруется.
 
 ```bash
-vlad@debian13:~$ ip -br a
-lo               UNKNOWN        127.0.0.1/8 ::1/128
-enp0s8           UP             192.168.56.102/24
+# на macbook получил ip-адрес
+vlad@MacBook-Air-vlad ~ % ipconfig getifaddr en0
+172.20.10.5
 
-vlad@debian13:~$ systemctl status ssh | head -3
+# на виртуальной машине
+vlad@debian13:~$ ssh vlad@172.20.10.5
+(vlad@172.20.10.5) Password:
+Last login: Wed Oct 21 22:47:31 2026 from 172.20.10.5
+vlad@MacBook-Air-vlad ~ % 
 ```
 
-Подключение:
+### 2. При помощи следующих команд: whoami, w, who, users, id, date, uname, tty, uptime получите информацию о УДАЛЕННОЙ системе и пользователях и зафиксируйте ее:
+
+* a. имя текущего пользователя:
 
 ```bash
-vlad@debian13:~$ ssh vlad@192.168.56.102
-The authenticity of host '192.168.56.102 (192.168.56.102)' can't be established.
-ED25519 key fingerprint is SHA256:Xk3...redacted...
-This key is not known by any other names.
-Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
-Warning: Permanently added '192.168.56.102' (ED25519) to the list of known hosts.
-vlad@192.168.56.102's password:
-Linux debian13 6.12.107+deb13-arm64 #1 SMP Debian 6.12.107-1 aarch64
-...
-Last login: Mon Oct 12 20:14:03 2026 from 192.168.56.101
-vlad@debian13:~$
-```
-
-![ssh connect](fig/9-01%20ssh.png)
-
-- `ssh пользователь@хост` — подключение под указанной учётной записью удалённой системы. Без `пользователя@` берётся
-  имя текущего пользователя.
-- При **первом** подключении клиент показывает отпечаток (fingerprint) ключа сервера и спрашивает подтверждение. Это
-  защита от подмены сервера (атака man-in-the-middle). После ответа `yes` ключ сохраняется в `~/.ssh/known_hosts`, и
-  при следующих подключениях сверяется автоматически. Если ключ сервера изменится, ssh выдаст предупреждение
-  `REMOTE HOST IDENTIFICATION HAS CHANGED`.
-- Далее запрашивается пароль удалённой учётной записи (вводимые символы не отображаются).
-- Строка `Last login: ... from ...` — время и адрес предыдущего входа в эту учётную запись (то же самое, что мы видели в
-  упр. 1.2).
-- Приглашение `vlad@debian13:~$` внешне не изменилось (имена машин одинаковые), но команды теперь выполняются на
-  **удалённой** системе. Отличить можно по IP в выводе `who`/`w` или командой `hostname -I`.
-
-### 2. Информация об удалённой системе и пользователях
-
-```bash
-vlad@debian13:~$ hostname -I
-192.168.56.102 10.0.2.15
-```
-
-#### a. Имя текущего пользователя
-
-```bash
-vlad@debian13:~$ whoami
+vlad@MacBook-Air-vlad ~ % whoami
 vlad
 ```
 
-#### b. UID, GID и идентификаторы вторичных групп
+* b. его идентификаторы UID, GID и идентификаторы вторичных групп:
 
 ```bash
-vlad@debian13:~$ id
-uid=1000(vlad) gid=1000(vlad) группы=1000(vlad),24(cdrom),25(floppy),27(sudo),29(audio),30(dip),44(video),46(plugdev),100(users),106(netdev)
+vlad@MacBook-Air-vlad ~ % id
+uid=501(vlad) gid=20(staff) groups=20(staff),12(everyone),61(localaccounts),79(_appserverusr),80(admin),81(_appserveradm),701(com.apple.sharepoint.group.1),33(_appstore),98(_lpadmin),100(_lpoperator),204(_developer),250(_analyticsusers),395(com.apple.access_ftp),398(com.apple.access_screensharing),400(com.apple.access_remote_ae)
+vlad@MacBook-Air-vlad ~ % 
 ```
 
-#### c. Количество и имена пользователей, работающих в системе
+* c. количество и имена пользователей, работающих в системе:
 
 ```bash
-vlad@debian13:~$ users
-vlad vlad
-
-vlad@debian13:~$ who
-vlad     tty1         2026-10-12 19:50
-vlad     pts/0        2026-10-12 20:21 (192.168.56.101)
-
-vlad@debian13:~$ w
- 20:25:41 up  1:02,  2 users,  load average: 0,00, 0,01, 0,00
-USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU  WHAT
-vlad     tty1     -                19:50    1:12   0.03s  0.03s -bash
-vlad     pts/0    192.168.56.101   20:21    0.00s  0.04s  0.00s w
+vlad@MacBook-Air-vlad ~ % who   
+vlad             console      16 окт. 10:51 
+vlad             ttys000      21 окт. 20:34 
+vlad             ttys001      21 окт. 22:39 
+vlad             ttys002      21 окт. 22:49 (172.20.10.5)
+vlad@MacBook-Air-vlad ~ % users                 
+vlad
+vlad@MacBook-Air-vlad ~ % w  
+22:52  up 5 days, 12:02, 4 users, load averages: 3,16 3,76 4,16
+USER       TTY      FROM          LOGIN@  IDLE WHAT
+vlad       console  -            пт10    5days -
+vlad       s000     -            20:34       - ssh vlad@localhost -p 2222
+vlad       s001     -            22:39       5 -zsh
+vlad       s002     172.20.10.5  22:49       - w
+vlad@MacBook-Air-vlad ~ % 
 ```
 
-![who and w](fig/9-02%20who%20w.png)
-
-- В `who`/`w` в колонке `FROM` (в скобках в `who`) виден адрес, **с которого** подключился пользователь — так отличается
-  сетевой сеанс (`pts/N`, адрес клиента) от локального (`tty1`, прочерк). Наш сеанс — `pts/0` с адреса `192.168.56.101`.
-- `users` выводит имя по одному разу на каждый сеанс, поэтому `vlad` повторяется дважды — работают два сеанса, а не два
-  разных человека.
-
-#### d. Имя текущего виртуального терминала
+* d. имя текущего виртуального терминала:
 
 ```bash
-vlad@debian13:~$ tty
-/dev/pts/0
+vlad@MacBook-Air-vlad ~ % tty 
+/dev/ttys002
+vlad@MacBook-Air-vlad ~ % 
 ```
 
-`pts` (pseudo-terminal slave) — псевдотерминал, создаваемый `sshd` для сетевого сеанса. Для физической/виртуальной
-консоли было бы `/dev/tty1`.
-
-#### e. Системная дата и время
+* e. системная дата и время:
 
 ```bash
-vlad@debian13:~$ date
-Пн 12 окт 2026 20:26:12 EEST
+vlad@MacBook-Air-vlad ~ % date             
+среда, 21 октября 2026 г. 22:53:08 (MSK)
+vlad@MacBook-Air-vlad ~ % 
 ```
 
-#### f. Версия операционной системы
+* f. версия операционной системы компьютера:
 
 ```bash
-vlad@debian13:~$ uname -a
-Linux debian13 6.12.107+deb13-arm64 #1 SMP Debian 6.12.107-1 (2026-08-29) aarch64 GNU/Linux
+vlad@MacBook-Air-vlad ~ % uname -a         
+Darwin MacBook-Air-vlad.local 27.0.0 Darwin Kernel Version 27.0.0: Tue Aug 11 21:02:16 PDT 2026; root:xnu-13432.1.9~1/RELEASE_ARM64_T8112 arm64
+vlad@MacBook-Air-vlad ~ % sw_vers          
+ProductName:		macOS
+ProductVersion:		27.0
+BuildVersion:		26A428
+vlad@MacBook-Air-vlad ~ % 
 ```
 
-#### g. Время работы системы и нагрузка
+* g. время работы операционной системы от момента запуска и нагрузку на операционную систему:
 
 ```bash
-vlad@debian13:~$ uptime
- 20:26:40 up  1:03,  2 users,  load average: 0,00, 0,01, 0,00
+vlad@MacBook-Air-vlad ~ % uptime  
+22:54  up 5 days, 12:05, 4 users, load averages: 5,90 4,46 4,37
+vlad@MacBook-Air-vlad ~ % 
 ```
 
-Три числа `load average` — средняя длина очереди готовых к выполнению процессов за 1, 5 и 15 минут.
-
-![remote info](fig/9-02%20remote%20info.png)
-
-### 3. Закончите сеанс работы на машине соседа
+### 3. Закончите сеанс работы в операционной системе на машине соседа.
 
 ```bash
-vlad@debian13:~$ exit
-logout
-Connection to 192.168.56.102 closed.
-vlad@debian13:~$
+vlad@MacBook-Air-vlad ~ % exit
+Connection to 172.20.10.5 closed.
+vlad@debian13:~$ 
 ```
 
-Сообщение `Connection to ... closed.` подтверждает, что вернулись в локальную систему.
+### 4. При помощи команды ssh запустите команду вывода полной информации о файлах домашнего каталога на УДАЛЕННОЙ операционной системе машины соседа, проследите за появляющимися сообщениями:
 
-### 4. Запуск команды на удалённой системе через ssh
+![01-4.png](fig/01-4.png)
 
-```bash
-vlad@debian13:~$ ssh vlad@192.168.56.102 ls -la
-vlad@192.168.56.102's password:
-итого 60
-drwx------ 6 vlad vlad 4096 окт 12 20:21 .
-drwxr-xr-x 4 root root 4096 сен  7 21:50 ..
--rw------- 1 vlad vlad 2310 окт 12 20:10 .bash_history
--rw-r--r-- 1 vlad vlad  220 сен  7 21:50 .bash_logout
--rw-r--r-- 1 vlad vlad 3526 сен  7 21:50 .bashrc
--rw-r--r-- 1 vlad vlad  807 сен  7 21:50 .profile
--rw-r--r-- 1 vlad vlad   42 сен 20 14:30 .plan
-drwxr-xr-x 2 vlad vlad 4096 окт  1 13:40 bin
-...
-vlad@debian13:~$
-```
+Отличия от обычного входа: нет приветствия (MOTD), нет приглашения оболочки. Удалённый `sshd` запускает команду, выводит
+её результат и сразу закрывает соединение. Псевдотерминал при этом не выделяется. Если поставить флаг `-t`, терминал
+выделится принудительно.
 
-![ssh remote ls](fig/9-01%20ssh%20ls.png)
-
-Если после `ssh хост` указана команда, `sshd` выполняет её в удалённой системе **без** запуска интерактивной оболочки,
-выводит результат на локальный терминал и сразу закрывает соединение. Это удобно для скриптов. Результат —
-содержимое домашнего каталога **соседа**, а не локального.
+---
 
 ## Упражнение 9.2. Локальная и сетевая почта
 
-> В системе работает MTA (Mail Transfer Agent) `exim4` (виден в `ps aux` как `/usr/sbin/exim4 -bdf -q30m`). Он
-> принимает письма от пользовательской программы `mail` и доставляет локальным получателям в почтовый ящик
-> `/var/mail/<пользователь>`. Для отправки писем нужен клиент (MUA).
+Почтовая система UNIX состоит из нескольких частей:
 
-Утилита `mail` по умолчанию не установлена:
+* MUA (Mail User Agent) — программа пользователя для чтения и отправки писем: mail, mutt.
+* MTA (Mail Transfer Agent) — демон, который доставляет почту.
+* Почтовый ящик: письма пользователя хранятся в файле /var/mail/vinnie
+
+### 1. При помощи команды mail пошлите несколько писем различного содержания пользователю vinnie, проследите за появляющимися сообщениями:
 
 ```bash
-vlad@debian13:~$ mail
--bash: mail: команда не найдена
-vlad@debian13:~$ sudo apt install bsd-mailx
+vlad@debian13:~$ mail -s "Первое письмо" vinnie
+Hello, vinnie!
+Cc: 
+vlad@debian13:~$ echo "Hello, vinnie2" | mail -s "Второе письмо" vinnie
+vlad@debian13:~$ mail -s "Третье: файл" vinnie < /etc/os-release
+vlad@debian13:~$ sudo ls -l /var/mail/ 
+итого 12
+-rw-rw---- 1 vinnie mail 7312 окт 21 23:09 vinnie
+-rw-rw---- 1 vlad   mail 3724 окт 21 23:07 vlad
+vlad@debian13:~$ sudo tail /var/log/exim4/mainlog 
+2026-10-21 23:07:44 1xJcbA-000000000YB-02TT Completed
+2026-10-21 23:08:49 1xJccD-000000000YS-4AUw <= vlad@debian13.myguest.virtualbox.org U=vlad P=local S=587
+2026-10-21 23:08:50 1xJccD-000000000YS-4AUw => vinnie <vinnie@debian13.myguest.virtualbox.org> R=local_user T=mail_spool
+2026-10-21 23:08:50 1xJccD-000000000YS-4AUw Completed
+2026-10-21 23:09:21 1xJccj-000000000YZ-2dFw <= vlad@debian13.myguest.virtualbox.org U=vlad P=local S=587
+2026-10-21 23:09:21 1xJccj-000000000YZ-2dFw => vinnie <vinnie@debian13.myguest.virtualbox.org> R=local_user T=mail_spool
+2026-10-21 23:09:21 1xJccj-000000000YZ-2dFw Completed
+2026-10-21 23:09:41 1xJcd3-000000000Ye-3Pc0 <= vlad@debian13.myguest.virtualbox.org U=vlad P=local S=855
+2026-10-21 23:09:41 1xJcd3-000000000Ye-3Pc0 => vinnie <vinnie@debian13.myguest.virtualbox.org> R=local_user T=mail_spool
+2026-10-21 23:09:41 1xJcd3-000000000Ye-3Pc0 Completed
+vlad@debian13:~$ 
 ```
 
-(`bsd-mailx` предоставляет команды `mail` и `mailx`; в Debian 13 допустима и замена `s-nail`.)
+### 2. Прочитайте и удалите прочитанные письма пользователя vinnie, проследите за появляющимися сообщениями:
 
-### 1. Отправка нескольких писем пользователю vinnie
-
-```bash
-vlad@debian13:~$ mail -s "Test 1" vinnie
-Cc:
-Hello, Vinnie!
-This is the first test letter.
-^D
-vlad@debian13:~$ mail -s "Lab 9" vinnie
-Cc:
-Second letter about lab 9.
-^D
-vlad@debian13:~$ echo "Third letter from pipe" | mail -s "From pipe" vinnie
-vlad@debian13:~$
-```
-
-![mail send](fig/9-03%20mail%20send.png)
-
-- `-s "тема"` — тема письма, далее адресат (`vinnie` — локальный пользователь; для удалённого —
-  `vinnie@host`).
-- Тело письма вводится с клавиатуры и завершается `^D` в начале пустой строки (EOF). После `^D` может спрашиваться
-  `Cc:` (копия).
-- Третий вариант демонстрирует конвейер (лаб. 6): тело письма берётся со stdin.
-- При успешной отправке сообщений не выводится («молчание — признак успеха»). Проверить очередь и доставку можно
-  командой `sudo mailq` (пусто — всё доставлено) и в журнале `sudo journalctl -u exim4`.
-
-### 2. Прочитайте и удалите письма пользователя vinnie
-
-Переходим в контекст vinnie (лаб. 1, упр. 1.7) или входим на другом терминале:
+![02-mail.png](fig/02-mail.png)
 
 ```bash
-vlad@debian13:~$ su - vinnie
-Пароль:
-У вас есть новая почта.
-vinnie@debian13:~$ mail
-"/var/mail/vinnie": 3 messages 3 new
->N  1 vlad               Mon Oct 12 20:31  14/419   Test 1
- N  2 vlad               Mon Oct 12 20:31  13/402   Lab 9
- N  3 vlad               Mon Oct 12 20:32  13/405   From pipe
-? 1
-Message  1:
-From vlad@debian13 Mon Oct 12 20:31:07 2026
-To: vinnie@debian13
-Subject: Test 1
-
-Hello, Vinnie!
-This is the first test letter.
-
-? d 1
-? d 2-3
-? q
 vinnie@debian13:~$ mail
 No mail for vinnie
-vinnie@debian13:~$
+vinnie@debian13:~$ 
 ```
 
-![mail read](fig/9-03%20mail%20read.png)
+| Команда                        | Действие                                 |
+|:-------------------------------|:-----------------------------------------|
+| **1** или **p 1**              | прочитать письмо №1                      |
+| **h**                          | заново показать список заголовков        |
+| **d 1** / **d 1-3** / **d \*** | удалить одно письмо / диапазон / все     |
+| **q**                          | выйти с сохранением изменений            |
+| **x**                          | выйти без изменений (удаление отменится) |
 
-Основные команды приглашения `?` программы `mail`:
-
-| Команда | Действие                                                       |
-|:--------|:---------------------------------------------------------------|
-| `N`     | прочитать письмо с номером N (или просто Enter — следующее)    |
-| `h`     | показать список заголовков                                     |
-| `d N`   | пометить письмо N к удалению; `d 2-3`, `d *` — несколько / все |
-| `r N`   | ответить на письмо                                             |
-| `q`     | выйти; помеченные письма удаляются из ящика                    |
-| `x`     | выйти **без** внесения изменений (удаления отменяются)         |
-
-В списке: `N` — новое непрочитанное письмо, `>` — текущее. Повторный запуск `mail` выводит `No mail for vinnie` — ящик
-пуст. Системное сообщение «У вас есть новая почта» (`You have new mail`) появляется при входе, если в `/var/mail/<user>`
-есть непрочитанные письма.
+---
 
 ## Упражнение 9.3. Передача файлов с помощью протокола FTP
 
-> **FTP** (File Transfer Protocol) — классический протокол передачи файлов (порт 21 — управляющее соединение, данные
-> идут по отдельному соединению). Пароль и данные передаются **открытым текстом**, поэтому сегодня FTP используют
-> в основном для публичных архивов с анонимным доступом, а для остального — SCP/SFTP/rsync по SSH.
-
-Клиент `ftp` может быть не установлен:
-
-```bash
-vlad@debian13:~$ sudo apt install ftp
-```
-
-### 1. Подключение к ftp.yandex.ru (анонимно)
+### 1. При помощи команды ftp подключитесь к серверу ftp.yandex.ru (анонимно - учетная запись anonymous), проследите за появляющимися сообщениями:
 
 ```bash
 vlad@debian13:~$ ftp ftp.yandex.ru
-Connected to ftp.yandex.ru.
-220 Yandex FTP server ready
-Name (ftp.yandex.ru:vlad): anonymous
-331 Please specify the password.
-Password:
+Trying 213.180.204.183:21 ...
+Connected to mirror.yandex.ru.
+421 Service not available, remote server has closed connection.
+```
+
+Сервер принял TCP-соединение на порт 21, но сразу ответил кодом `421` и закрыл соединение. Это значит, что FTP-служба на
+нём недоступна. Последующие попытки завершились ошибкой `Временный сбой в разрешении имен` ещё до подключения к серверу,
+поэтому на них ответа сервера нет.
+
+Дальше работа выполнена на анонимном FTP-сервере **ftp.gnu.org**: та же процедура, другой сервер.
+
+```bash
+vlad@debian13:~$ ftp ftp.gnu.org
+Trying 209.51.188.20:21 ...
+Connected to ftp.gnu.org.
+220 GNU FTP server ready.
+Name (ftp.gnu.org:vlad): anonymous
+230-NOTICE (Updated October 15 2021):
+230-
+230-If you maintain scripts used to access ftp.gnu.org over FTP,
+230-we strongly encourage you to change them to use HTTPS instead.
+230-
+230-Eventually we hope to shut down FTP protocol access, but plan
+230-to give notice here and other places for several months ahead
+230-of time.
+...
 230 Login successful.
 Remote system type is UNIX.
 Using binary mode to transfer files.
-ftp>
 ```
 
-![ftp login](fig/9-04%20ftp%20login.png)
+- `220` — сервер готов к работе;
+- `Name (...)` — клиент запросил имя пользователя; `anonymous` — анонимный вход без личного пароля;
+- `230` — вход выполнен. Строки `230-` — текст уведомления сервера (многострочный ответ, последняя строка с `230 ` без
+  дефиса);
+- `Remote system type is UNIX` — клиент определил тип удалённой системы;
+- `Using binary mode` — по умолчанию клиент передаёт файлы в двоичном режиме.
 
-- Код `220` — сервер готов, `331` — нужен пароль, `230` — вход выполнен. Коды ответов FTP трёхзначные: `2xx` —
-  успех, `3xx` — нужна дополнительная информация, `4xx/5xx` — ошибка.
-- Имя `anonymous` (или `ftp`) — анонимный вход; в качестве пароля по традиции вводят e-mail (допустим любой текст).
+В уведомлении сервер рекомендует переходить на HTTPS, так как FTP в будущем могут отключить.
 
-> **Если подключение не удаётся.** Многие зеркала отключили FTP в пользу HTTPS/rsync, а каталог `jessie` перенесён в
-> архив (`archive.debian.org`), поскольку Debian 8 давно снят с поддержки. В этом случае зафиксируйте сообщение об
-> ошибке (например, `ftp: connect: Connection refused` или `550 Failed to change directory`) и повторите упражнение на
-> любом доступном анонимном сервере, например `ftp.debian.org` (каталог `/debian/dists/trixie`). Алгоритм команд ниже
-> от этого не меняется.
-
-### 2. Переход в каталог /debian/dists/jessie
+### 2. Перейдите в каталог /debian/dists/jessie, проследите за появляющимися сообщениями:
 
 ```bash
-ftp> pwd
-Remote directory: /
 ftp> cd /debian/dists/jessie
+550 Failed to change directory.
+```
+
+Каталога `/debian/dists/jessie` на ftp.gnu.org нет: этот сервер хранит архив проекта GNU, а не дистрибутив Debian. Путь
+из методички относится к зеркалу Debian. Код `550` означает, что каталог или файл недоступен.
+
+Для продолжения работы посмотрите содержимое каталога `gnu` и перейдите в него:
+
+```bash
+ftp> ls gnu
+ftp> cd gnu/
 250 Directory successfully changed.
 ftp> pwd
-Remote directory: /debian/dists/jessie
-ftp> ls
-200 PORT command successful.
-150 Here comes the directory listing.
--rw-r--r--    1 ftp      ftp         12345 Jun 06  2020 ChangeLog
-drwxr-xr-x    2 ftp      ftp          4096 Jun 06  2020 contrib
--rw-r--r--    1 ftp      ftp         ...   Release
-drwxr-xr-x    2 ftp      ftp          4096 Jun 06  2020 main
-...
-226 Directory send OK.
+Remote directory: /gnu
 ```
 
-- `cd`, `pwd`, `ls` в `ftp>` работают так же, как в shell, но **на удалённой** стороне. Для локальных операций
-  используется `!` (например, `!ls`) и команда `lcd` (смена локального каталога).
+Код `250` — команда выполнена успешно. Удалённый каталог теперь `/gnu`. Команда `pwd` показывает текущий каталог на
+**удалённом** сервере.
 
-### 3. Получение файла ChangeLog
+### 3. Получите с удаленного сервера файл ChangeLog, проследите за появляющимися сообщениями:
 
 ```bash
-ftp> lcd ~
-Local directory now /home/vlad
+ftp> cd /
+250 Directory successfully changed.
+ftp> binary
+200 Switching to Binary mode.
 ftp> get ChangeLog
 local: ChangeLog remote: ChangeLog
-200 PORT command successful. Consider using PASV.
-150 Opening BINARY mode data connection for ChangeLog (12345 bytes).
-226 Transfer complete.
-12345 bytes received in 0.12 secs (100.2 kB/s)
+229 Entering Extended Passive Mode (|||23087|)
+550 Failed to open file.
+ftp> !ls -l ChangeLog
+ls: невозможно получить доступ к 'ChangeLog': Нет такого файла или каталога
 ```
 
-![ftp get](fig/9-04%20ftp%20get.png)
+Файла `ChangeLog` в каталоге `/` на ftp.gnu.org нет, поэтому получить его не удалось. Строка
+`local: ChangeLog remote: ChangeLog` показывает, как клиент назвал файл локально и на сервере. Код
+`229 Entering Extended Passive Mode` означает переход в пассивный режим: сервер сообщает порт, по которому откроет
+соединение для данных. Код `550` при этом означает, что сам файл не открылся. Команда `!ls` выполняется на **локальной**
+машине и подтверждает, что файл не появился.
 
-- `get файл` — скачать файл (удалённый → локальный), `put файл` — отправить (локальный → удалённый), `mget`/`mput` —
-  по шаблону, `binary`/`ascii` — режим передачи. Если за NAT не устанавливается передача данных, помогает команда
-  `passive` (пассивный режим).
-- Код `226 Transfer complete` — передача завершена успешно. Проверка: `ls -l ~/ChangeLog`.
+Чтобы выполнить задание, скачайте файл, который есть на сервере. Содержимое листинга `ls` видно в сеансе выше, поэтому
+возьмём `README`:
 
-### 4. Завершение сеанса
+```bash
+ftp> binary
+200 Switching to Binary mode.
+ftp> get README
+local: README remote: README
+229 Entering Extended Passive Mode (|||27355|)
+150 Opening BINARY mode data connection for README (2814 bytes).
+100% |***********************************|  2814        8.28 MiB/s    00:00 ETA
+226 Transfer complete.
+2814 bytes received in 00:00 (19.12 KiB/s)
+ftp> !ls -l README
+-rw-rw-r-- 1 vlad vlad 2814 дек 31  2025 README
+```
+
+- `150` — сервер открыл соединение для данных и готов передавать файл;
+- `226 Transfer complete` — передача завершена успешно;
+- строка с прогрессом показывает размер (2814 байт) и скорость. Размер совпадает с размером файла в листинге сервера,
+  значит передача прошла полностью.
+
+### 4. Закончите сеанс работы с командой ftp, проследите за появляющимися сообщениями:
 
 ```bash
 ftp> bye
@@ -347,151 +285,85 @@ ftp> bye
 vlad@debian13:~$
 ```
 
-`bye` (также `quit`, `exit`) закрывает управляющее соединение; сервер отвечает кодом `221`.
+Код `221` — сервер закрыл управляющее соединение.
 
-### 5. Интерактивные клиенты ncftp, lftp, mc
+### Коды ответов FTP-сервера
 
-```bash
-vlad@debian13:~$ sudo apt install ncftp lftp
-```
+Сервер отвечает трёхзначным кодом. Первая цифра показывает итог: `2xx` — успех, `4xx` — временная ошибка, `5xx` —
+постоянная ошибка. Если строка начинается с `NNN-`, это многострочный ответ, а последняя строка повторяет код без дефиса
+(`NNN `).
 
-**ncftp** — улучшенный клиент: анонимный вход по умолчанию, автодополнение, индикатор прогресса, закладки.
+| Код | Значение                                                               | Где встретился в отчёте                                  |
+|:---:|:-----------------------------------------------------------------------|:---------------------------------------------------------|
+| 150 | Открываю соединение для передачи данных                                | 9.3.3, `get README`                                      |
+| 200 | Команда выполнена (например, переключение в двоичный режим)            | 9.3.3, `binary`                                          |
+| 220 | Сервер готов к работе (приветствие)                                    | 9.3.1, подключение к ftp.gnu.org                         |
+| 221 | Сервер закрывает управляющее соединение (до свидания)                  | 9.3.4, `bye`                                             |
+| 226 | Передача данных завершена успешно                                      | 9.3.3, `get README`                                      |
+| 229 | Переход в расширенный пассивный режим, сервер сообщает порт для данных | 9.3.3, `get ChangeLog` и `get README`                    |
+| 230 | Вход выполнен; строки `230-` содержат текст уведомления                | 9.3.1, вход `anonymous`                                  |
+| 250 | Команда выполнена успешно (смена каталога)                             | 9.3.2, `cd gnu/`                                         |
+| 421 | Служба недоступна, сервер закрывает соединение                         | 9.3.1, ftp.yandex.ru                                     |
+| 550 | Каталог или файл недоступен (не найден или нет доступа)                | 9.3.2, `cd /debian/dists/jessie`; 9.3.3, `get ChangeLog` |
 
-```bash
-vlad@debian13:~$ ncftp ftp.yandex.ru
-ncftp / > cd /debian/dists/jessie
-ncftp /debian/dists/jessie > get ChangeLog
-ChangeLog:                 12.06 kB  100.20 kB/s
-ncftp /debian/dists/jessie > bye
-```
+---
 
-![ncftp](fig/9-04%20ncftp.png)
+## Упражнение 9.4. Передача файлов с помощью протоколов SCP
 
-**lftp** — мощный клиент с автодополнением по Tab, историей, докачкой (`get -c`), параллельными загрузками,
-зеркалированием (`mirror`), поддержкой FTP/SFTP/HTTP.
+> scp копирует файлы через SSH
 
-```bash
-vlad@debian13:~$ lftp ftp.yandex.ru
-lftp ftp.yandex.ru:~> cd /debian/dists/jessie
-lftp ftp.yandex.ru:/debian/dists/jessie> get ChangeLog
-12345 bytes transferred
-lftp ftp.yandex.ru:/debian/dists/jessie> bye
-```
-
-![lftp](fig/9-04%20lftp.png)
-
-**Midnight Commander** — FTP-соединение открывается как обычный каталог в панели: `F9` → «Правая панель» →
-«FTP-соединение…» (или `Ctrl+\`, либо в командной строке `cd ftp://anonymous@ftp.yandex.ru/debian/dists/jessie`).
-Файл копируется клавишей `F5` из удалённой панели в локальную — так же, как между локальными каталогами (упр. 7.3).
-
-![mc ftp](fig/9-04%20mc%20ftp.png)
-
-## Упражнение 9.4. Передача файлов с помощью протокола SCP
-
-> **SCP** (Secure Copy) — копирование файлов поверх SSH. Данные и пароль шифруются, используется тот же порт 22 и та же
-> аутентификация, что и у `ssh`. Синтаксис аналогичен `cp`: `scp источник приёмник`, где удалённый путь записывается
-> как `пользователь@хост:путь`.
-
-### 1. Копирование .plan соседа в remote.plan
+### 1. При помощи команды scp скопируйте файл .plan из домашнего каталога пользователя student машины соседа в домашний каталог пользователя student, с именем remote.plan, проследите за появляющимися сообщениям:
 
 ```bash
-vlad@debian13:~$ scp vlad@192.168.56.102:.plan remote.plan
-vlad@192.168.56.102's password:
-.plan                                         100%   42     0.1KB/s   00:00
-vlad@debian13:~$
+vlad@debian13:~$ scp vlad@172.20.10.5:.plan ~/remote.plan
+(vlad@172.20.10.5) Password:
+.plan                                         100%   48    37.4KB/s   00:00    
+vlad@debian13:~$ 
 ```
 
-![scp](fig/9-05%20scp.png)
-
-- `vlad@192.168.56.102:.plan` — источник: файл `.plan` в домашнем каталоге (относительный путь после `:` отсчитывается
-  от домашнего каталога удалённого пользователя; можно писать и `:~/.plan`, и абсолютный `:/home/vlad/.plan`).
-- `remote.plan` — приёмник: имя нового локального файла в текущем каталоге.
-- Выводится индикатор: имя файла, процент, размер, скорость, время. Направление можно изменить на обратное:
-  `scp remote.plan vlad@192.168.56.102:`; для каталогов нужен ключ `-r`.
-
-### 2. Просмотр содержимого remote.plan
+### 2. Просмотрите содержимое файла remote.plan
 
 ```bash
-vlad@debian13:~$ cat remote.plan
-Студент группы ..., лабораторные работы по UNIX
-vlad@debian13:~$ ls -l remote.plan .plan
--rw-r--r-- 1 vlad vlad 42 окт 12 20:50 remote.plan
--rw-r--r-- 1 vlad vlad 31 сен 20 14:30 .plan
+vlad@debian13:~$ cat remote.plan 
+Это .plan с удалённой машины
+vlad@debian13:~$ 
 ```
 
-Содержимое — план **соседа**, отличающийся от локального `.plan`; время создания файла — время копирования.
+---
 
 ## Упражнение 9.5. Синхронизация файлов с помощью протокола RSYNC/SSH
 
-> **rsync** копирует только **различия** между источником и приёмником (алгоритм дельта-кодирования), поэтому
-> повторная синхронизация большого каталога занимает считанные секунды. В качестве транспорта используется SSH.
-> `rsync` должен быть установлен **на обеих** машинах.
+> rsync синхронизирует каталоги. Он передаёт только разницу: сравнивает размер и время изменения файлов, а внутри
+> файлов — блоки по контрольным суммам.
+
+### 1. При помощи команды rsync синхронизуйте содержимое каталога bin из домашнего каталога пользователя student машины соседа, используя защищенный транспорт SSH, в домашний каталог пользователя student, с именем remote.bin, проследите за появляющимися сообщениям:
 
 ```bash
-vlad@debian13:~$ sudo apt install rsync
-```
-
-### 1. Синхронизация каталога bin соседа в remote.bin
-
-```bash
-vlad@debian13:~$ rsync -avz -e ssh vlad@192.168.56.102:bin/ remote.bin/
-vlad@192.168.56.102's password:
-receiving incremental file list
-created directory remote.bin
+vlad@debian13:~$ rsync -avz -e ssh vlad@172.20.10.5:bin/ ~/remote.bin
+(vlad@172.20.10.5) Password:
+receiving file list ... done
+created directory /home/vlad/remote.bin
 ./
-script1.sh
-script2.sh
+hello.sh
+now.sh
 
-sent 62 bytes  received 354 bytes  92.44 bytes/sec
-total size is 512  speedup is 1.23
-vlad@debian13:~$
+sent 70 bytes  received 318 bytes  70,55 bytes/sec
+total size is 16  speedup is 0,04
+vlad@debian13:~$ 
 ```
 
-![rsync](fig/9-06%20rsync.png)
+* `-a (archive)` — рекурсивно, с сохранением прав, времени и ссылок;
+* `-v` — показывать передаваемые файлы;
+* `-z` — сжимать данные при передаче.
 
-Разбор команды:
-
-- `-a` (archive) — режим архивирования: рекурсивно, с сохранением прав, владельцев, времени изменения, символических
-  ссылок (аналог `-rlptgoD`);
-- `-v` (verbose) — подробный вывод списка передаваемых файлов;
-- `-z` (compress) — сжатие данных при передаче;
-- `-e ssh` — использовать SSH в качестве удалённой оболочки (транспорта);
-- `vlad@192.168.56.102:bin/` — источник; **косая черта в конце** означает «содержимое каталога bin», а не сам каталог
-  (без неё внутри `remote.bin` появился бы вложенный каталог `bin`);
-- `remote.bin/` — приёмник; при отсутствии создаётся (`created directory remote.bin`).
-
-Повторный запуск без изменений ничего не передаёт — это отличие rsync от scp:
+### 2. Просмотрите содержимое полученного каталога remote.bin
 
 ```bash
-vlad@debian13:~$ rsync -avz -e ssh vlad@192.168.56.102:bin/ remote.bin/
-receiving incremental file list
-
-sent 20 bytes  received 98 bytes  47.20 bytes/sec
-total size is 512  speedup is 4.34
+vlad@debian13:~$ ls -la ~/remote.bin
+итого 16
+drwxr-xr-x 2 vlad vlad 4096 окт 22 13:08 .
+drwx------ 9 vlad vlad 4096 окт 22 13:12 ..
+-rw-r--r-- 1 vlad vlad   11 окт 22 13:08 hello.sh
+-rw-r--r-- 1 vlad vlad    5 окт 22 13:08 now.sh
+vlad@debian13:~$ 
 ```
-
-Если на стороне соседа нет каталога `bin`, его нужно предварительно создать и положить пару файлов
-(`mkdir ~/bin; echo 'echo hi' > ~/bin/script1.sh`). Чтобы удалить в приёмнике файлы, исчезнувшие в источнике, добавляют
-ключ `--delete`.
-
-### 2. Просмотр содержимого remote.bin
-
-```bash
-vlad@debian13:~$ ls -l remote.bin
-итого 8
--rwxr-xr-x 1 vlad vlad 256 окт  1 13:40 script1.sh
--rwxr-xr-x 1 vlad vlad 256 окт  1 13:41 script2.sh
-```
-
-Права доступа и время изменения файлов **сохранены** (благодаря `-a`), в отличие от обычного копирования, где время
-выставляется на момент копирования.
-
-### Сравнение способов передачи файлов
-
-| Критерий                | FTP                           | SCP                 | RSYNC/SSH                      |
-|:------------------------|:------------------------------|:--------------------|:-------------------------------|
-| **Шифрование**          | нет (пароль открытым текстом) | да (SSH)            | да (SSH)                       |
-| **Порт**                | 21 + порт данных              | 22                  | 22                             |
-| **Передаёт**            | файлы целиком                 | файлы целиком       | только различия                |
-| **Сохраняет атрибуты**  | нет                           | только с `-p`       | да (`-a`)                      |
-| **Типичное применение** | публичные анонимные архивы    | разовое копирование | резервное копирование, зеркала |
