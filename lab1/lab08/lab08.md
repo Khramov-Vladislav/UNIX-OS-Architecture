@@ -1,4 +1,4 @@
-[//]: # (Работа выполнена)
+[//]: # (Работа сдана)
 
 # Лабораторная работа №8. Процессы UNIX
 
@@ -12,96 +12,93 @@
 > `ps aux` — снимок всех процессов
 
 ```bash
-vlad@debian13:~$ ps aux
+vlad@debian13:~$ ps aux  
 USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
-root           1  0.6  0.6  24124 13916 ?        Ss   12:59   0:00 /sbin/init
-root           2  0.0  0.0      0     0 ?        S    12:59   0:00 [kthreadd]
-root           3  0.0  0.0      0     0 ?        S    12:59   0:00 [pool_workque
-root           4  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-kv
-root           5  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-rc
-root           6  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-sy
-root           7  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-sl
-root           8  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ne
-root           9  0.3  0.0      0     0 ?        I    12:59   0:00 [kworker/0:0-
-root          10  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/0:0H
-root          11  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/0:1-
-root          12  0.1  0.0      0     0 ?        I    12:59   0:00 [kworker/u4:0
-root          13  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-mm
-root          14  0.0  0.0      0     0 ?        I    12:59   0:00 [rcu_tasks_ru
-root          15  0.0  0.0      0     0 ?        I    12:59   0:00 [rcu_tasks_tr
-root          16  0.0  0.0      0     0 ?        S    12:59   0:00 [ksoftirqd/0]
-root          17  0.0  0.0      0     0 ?        I    12:59   0:00 [rcu_sched]
-root          18  0.0  0.0      0     0 ?        S    12:59   0:00 [rcu_exp_par_
-root          19  0.0  0.0      0     0 ?        S    12:59   0:00 [rcu_exp_gp_k
-root          20  0.0  0.0      0     0 ?        S    12:59   0:00 [migration/0]
-root          21  0.0  0.0      0     0 ?        S    12:59   0:00 [cpuhp/0]
-root          23  0.0  0.0      0     0 ?        S    12:59   0:00 [kdevtmpfs]
-root          24  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-in
-root          25  0.0  0.0      0     0 ?        S    12:59   0:00 [kauditd]
-root          26  0.0  0.0      0     0 ?        S    12:59   0:00 [khungtaskd]
-root          27  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/u4:1
-root          28  0.0  0.0      0     0 ?        S    12:59   0:00 [oom_reaper]
-root          29  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-wr
-root          30  0.0  0.0      0     0 ?        S    12:59   0:00 [kcompactd0]
-root          31  0.0  0.0      0     0 ?        SN   12:59   0:00 [ksmd]
-root          32  0.0  0.0      0     0 ?        RN   12:59   0:00 [khugepaged]
-root          33  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ki
-root          34  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-kb
-root          35  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-bl
-root          36  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-tp
-root          37  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ed
-root          38  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-de
-root          39  0.0  0.0      0     0 ?        S    12:59   0:00 [watchdogd]
-root          40  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-qu
-root          41  0.1  0.0      0     0 ?        I<   12:59   0:00 [kworker/0:1H
-root          42  0.0  0.0      0     0 ?        S    12:59   0:00 [kswapd0]
-root          44  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/u4:2
-root          46  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/u4:3
-root          51  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-kt
-root          55  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ac
-root          56  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ml
-root          57  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ip
-root          62  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ks
-root          64  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/u5:0
-root         123  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/u4:4
-root         172  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/0:2-
-root         173  0.0  0.0      0     0 ?        S    12:59   0:00 [scsi_eh_0]
-root         174  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-sc
-root         205  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/0:3-
-root         209  0.0  0.0      0     0 ?        S    12:59   0:00 [jbd2/sda3-8]
-root         210  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ex
-root         252  0.1  0.7  43004 15640 ?        Ss   12:59   0:00 /usr/lib/syst
-root         271  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/0:4-
-root         272  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/0:5]
-systemd+     298  0.0  0.3  92168  7584 ?        Ssl  12:59   0:00 /usr/lib/syst
-root         306  0.0  0.4  36392  9804 ?        Ss   12:59   0:00 /usr/lib/syst
-root         308  0.0  0.0      0     0 ?        S    12:59   0:00 [psimon]
-root         425  0.0  0.0      0     0 ?        S    12:59   0:00 [irq/14-vmwgf
-root         426  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-tt
-root         579  0.0  0.1   6984  2728 ?        Ss   12:59   0:00 /usr/sbin/cro
-message+     593  0.1  0.2   8528  4460 ?        Ss   12:59   0:00 /usr/bin/dbus
-root         600  0.0  0.4  19180  8500 ?        Ss   12:59   0:00 /usr/lib/syst
-dhcpcd       602  0.0  0.2  10112  4404 ?        S    12:59   0:00 dhcpcd: enp0s
-root         603  0.0  0.1  10120  2340 ?        S    12:59   0:00 dhcpcd: [priv
-dhcpcd       604  0.0  0.1  10104  2192 ?        S    12:59   0:00 dhcpcd: [netw
-dhcpcd       605  0.0  0.1  10100  2184 ?        S    12:59   0:00 dhcpcd: [cont
-daemon       608  0.0  0.1   3928  2180 ?        Ss   12:59   0:00 /usr/sbin/atd
-root         662  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/u4:5
-root         685  0.0  0.1   7716  2220 tty1     Ss+  12:59   0:00 /sbin/agetty 
-root         697  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-cf
-root         755  0.0  0.3  11528  7440 ?        Ss   12:59   0:00 sshd: /usr/sb
-Debian-+     930  0.3  1.1  41988 22960 ?        Ss   12:59   0:00 /usr/sbin/exi
-dhcpcd       937  0.0  0.1  10120  2276 ?        S    12:59   0:00 dhcpcd: [BPF 
-dhcpcd       938  0.0  0.1  10120  2340 ?        S    12:59   0:00 dhcpcd: [DHCP
-dhcpcd       954  0.0  0.1  10120  2340 ?        S    12:59   0:00 dhcpcd: [DHCP
-dhcpcd       991  0.0  0.1  10120  2340 ?        S    12:59   0:00 dhcpcd: [BOOT
-root         992  0.1  0.5  21924 11956 ?        Ss   12:59   0:00 sshd-session:
-root         998  0.0  0.0      0     0 ?        S    12:59   0:00 [psimon]
-vlad        1000  0.6  0.5  22548 11920 ?        Ss   12:59   0:00 /usr/lib/syst
-vlad        1002  0.0  0.1  26476  3996 ?        S    12:59   0:00 (sd-pam)
-vlad        1015  0.2  0.3  22180  7368 ?        S    12:59   0:00 sshd-session:
-vlad        1016  0.2  0.2   8660  5480 pts/0    Ss   12:59   0:00 -bash
-vlad        1020  0.0  0.1   9008  3696 pts/0    R+   12:59   0:00 ps aux
+root           1  0.0  0.6  24736 14000 ?        Ss   12:53   0:00 /sbin/init
+root           2  0.0  0.0      0     0 ?        S    12:53   0:00 [kthreadd]
+root           3  0.0  0.0      0     0 ?        S    12:53   0:00 [pool_workque
+root           4  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-kv
+root           5  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-rc
+root           6  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-sy
+root           7  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-sl
+root           8  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-ne
+root          10  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/0:0H
+root          13  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-mm
+root          14  0.0  0.0      0     0 ?        I    12:53   0:00 [rcu_tasks_ru
+root          15  0.0  0.0      0     0 ?        I    12:53   0:00 [rcu_tasks_tr
+root          16  0.0  0.0      0     0 ?        S    12:53   0:00 [ksoftirqd/0]
+root          17  0.0  0.0      0     0 ?        I    12:53   0:00 [rcu_sched]
+root          18  0.0  0.0      0     0 ?        S    12:53   0:00 [rcu_exp_par_
+root          19  0.0  0.0      0     0 ?        S    12:53   0:00 [rcu_exp_gp_k
+root          20  0.0  0.0      0     0 ?        S    12:53   0:00 [migration/0]
+root          21  0.0  0.0      0     0 ?        S    12:53   0:00 [cpuhp/0]
+root          23  0.0  0.0      0     0 ?        S    12:53   0:00 [kdevtmpfs]
+root          24  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-in
+root          25  0.0  0.0      0     0 ?        S    12:53   0:00 [kauditd]
+root          26  0.0  0.0      0     0 ?        S    12:53   0:00 [khungtaskd]
+root          27  0.0  0.0      0     0 ?        I    12:53   0:00 [kworker/u4:1
+root          28  0.0  0.0      0     0 ?        S    12:53   0:00 [oom_reaper]
+root          29  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-wr
+root          30  0.0  0.0      0     0 ?        S    12:53   0:00 [kcompactd0]
+root          31  0.0  0.0      0     0 ?        SN   12:53   0:00 [ksmd]
+root          32  0.0  0.0      0     0 ?        SN   12:53   0:00 [khugepaged]
+root          33  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-ki
+root          34  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-kb
+root          35  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-bl
+root          36  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-tp
+root          37  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-ed
+root          38  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-de
+root          39  0.0  0.0      0     0 ?        S    12:53   0:00 [watchdogd]
+root          40  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-qu
+root          41  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/0:1H
+root          42  0.0  0.0      0     0 ?        S    12:53   0:00 [kswapd0]
+root          46  0.0  0.0      0     0 ?        I    12:53   0:00 [kworker/u4:3
+root          51  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-kt
+root          55  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-ac
+root          56  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-ml
+root          57  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-ip
+root          62  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-ks
+root          64  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/u5:0
+root         121  0.0  0.0      0     0 ?        I    12:53   0:00 [kworker/u4:4
+root         173  0.0  0.0      0     0 ?        S    12:53   0:00 [scsi_eh_0]
+root         174  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-sc
+root         210  0.0  0.0      0     0 ?        S    12:53   0:00 [jbd2/sda3-8]
+root         211  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-ex
+root         256  0.0  0.8  51248 16404 ?        Ss   12:53   0:00 /usr/lib/syst
+systemd+     297  0.0  0.3  92168  7732 ?        Ssl  12:53   0:00 /usr/lib/syst
+root         302  0.0  0.4  36392  9776 ?        Ss   12:53   0:00 /usr/lib/syst
+root         307  0.0  0.0      0     0 ?        S    12:53   0:00 [psimon]
+root         424  0.0  0.0      0     0 ?        S    12:53   0:00 [irq/14-vmwgf
+root         425  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-tt
+root         578  0.0  0.1   6984  2728 ?        Ss   12:53   0:00 /usr/sbin/cro
+message+     592  0.0  0.2   8528  4484 ?        Ss   12:53   0:00 /usr/bin/dbus
+dhcpcd       600  0.0  0.2  10112  4404 ?        S    12:53   0:00 dhcpcd: enp0s
+root         601  0.0  0.1  10116  2332 ?        S    12:53   0:00 dhcpcd: [priv
+dhcpcd       602  0.0  0.1  10100  2184 ?        S    12:53   0:00 dhcpcd: [netw
+dhcpcd       603  0.0  0.1  10100  2180 ?        S    12:53   0:00 dhcpcd: [cont
+root         605  0.0  0.4  19180  8476 ?        Ss   12:53   0:00 /usr/lib/syst
+daemon       607  0.0  0.1   3928  2180 ?        Ss   12:53   0:00 /usr/sbin/atd
+root         688  0.0  0.1   7716  2220 tty1     Ss+  12:53   0:00 /sbin/agetty 
+root         689  0.0  0.0      0     0 ?        I<   12:53   0:00 [kworker/R-cf
+root         880  0.0  0.3  11528  7424 ?        Ss   12:53   0:00 sshd: /usr/sb
+Debian-+     998  0.0  1.1  41992 22968 ?        Ss   12:53   0:00 /usr/sbin/exi
+dhcpcd      1004  0.0  0.1  10116  2332 ?        S    12:54   0:00 dhcpcd: [DHCP
+dhcpcd      1006  0.0  0.1  10116  2268 ?        S    12:54   0:00 dhcpcd: [BPF 
+dhcpcd      1023  0.0  0.1  10116  2332 ?        S    12:54   0:00 dhcpcd: [DHCP
+dhcpcd      1059  0.0  0.1  10116  2332 ?        S    12:54   0:00 dhcpcd: [BOOT
+root        1060  0.0  0.5  21924 11936 ?        Ss   12:54   0:00 sshd-session:
+vlad        1068  0.0  0.5  22580 11804 ?        Ss   12:54   0:00 /usr/lib/syst
+vlad        1070  0.0  0.1  26476  3996 ?        S    12:54   0:00 (sd-pam)
+vlad        1083  0.0  0.3  22180  7368 ?        S    12:54   0:05 sshd-session:
+vlad        1084  0.0  0.2   9052  5924 pts/0    Ss   12:54   0:00 -bash
+dhcpcd      1107  0.0  0.1  10116  2332 ?        S    13:01   0:00 dhcpcd: [DHCP
+root        1284  0.0  0.0      0     0 ?        S    13:09   0:00 [psimon]
+root        1544  0.2  0.0      0     0 ?        I    14:30   0:02 [kworker/0:0-
+root        1559  0.4  0.0      0     0 ?        I    14:35   0:02 [kworker/0:1-
+vlad        1575  0.0  0.1   8260  3324 pts/0    T    14:40   0:00 man ls
+vlad        1585  0.0  0.1   5808  2464 pts/0    T    14:40   0:00 pager
+root        1590  0.7  0.0      0     0 ?        I    14:42   0:00 [kworker/0:2-
+vlad        1605  100  0.1   9008  3700 pts/0    R+   14:44   0:00 ps aux
 vlad@debian13:~$ 
 ```
 
@@ -120,76 +117,64 @@ vlad@debian13:~$
 > скобках, принадлежат root, PID обычно малые числа или специфичные для подсистем ядра:
 
 ```bash
-vlad@debian13:~$ ps aux | grep '\['
-root           2  0.0  0.0      0     0 ?        S    12:59   0:00 [kthreadd]
-root           3  0.0  0.0      0     0 ?        S    12:59   0:00 [pool_workqueue_release]
-root           4  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-kvfree_rcu_reclaim]
-root           5  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-rcu_gp]
-root           6  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-sync_wq]
-root           7  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-slub_flushwq]
-root           8  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-netns]
-root          10  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/0:0H-events_highpri]
-root          11  0.1  0.0      0     0 ?        I    12:59   0:00 [kworker/0:1-events]
-root          13  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-mm_percpu_wq]
-root          14  0.0  0.0      0     0 ?        I    12:59   0:00 [rcu_tasks_rude_kthread]
-root          15  0.0  0.0      0     0 ?        I    12:59   0:00 [rcu_tasks_trace_kthread]
-root          16  0.0  0.0      0     0 ?        S    12:59   0:00 [ksoftirqd/0]
-root          17  0.0  0.0      0     0 ?        I    12:59   0:00 [rcu_sched]
-root          18  0.0  0.0      0     0 ?        S    12:59   0:00 [rcu_exp_par_gp_kthread_worker/0]
-root          19  0.0  0.0      0     0 ?        S    12:59   0:00 [rcu_exp_gp_kthread_worker]
-root          20  0.0  0.0      0     0 ?        S    12:59   0:00 [migration/0]
-root          21  0.0  0.0      0     0 ?        S    12:59   0:00 [cpuhp/0]
-root          23  0.0  0.0      0     0 ?        S    12:59   0:00 [kdevtmpfs]
-root          24  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-inet_frag_wq]
-root          25  0.0  0.0      0     0 ?        S    12:59   0:00 [kauditd]
-root          26  0.0  0.0      0     0 ?        S    12:59   0:00 [khungtaskd]
-root          27  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/u4:1-flush-8:0]
-root          28  0.0  0.0      0     0 ?        S    12:59   0:00 [oom_reaper]
-root          29  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-writeback]
-root          30  0.0  0.0      0     0 ?        S    12:59   0:00 [kcompactd0]
-root          31  0.0  0.0      0     0 ?        SN   12:59   0:00 [ksmd]
-root          32  0.0  0.0      0     0 ?        SN   12:59   0:00 [khugepaged]
-root          33  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-kintegrityd]
-root          34  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-kblockd]
-root          35  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-blkcg_punt_bio]
-root          36  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-tpm_dev_wq]
-root          37  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-edac-poller]
-root          38  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-devfreq_wq]
-root          39  0.0  0.0      0     0 ?        S    12:59   0:00 [watchdogd]
-root          40  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-quota_events_unbound]
-root          41  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/0:1H-kblockd]
-root          42  0.0  0.0      0     0 ?        S    12:59   0:00 [kswapd0]
-root          46  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/u4:3-flush-8:0]
-root          51  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-kthrotld]
-root          55  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-acpi_thermal_pm]
-root          56  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-mld]
-root          57  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ipv6_addrconf]
-root          62  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-kstrp]
-root          64  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/u5:0]
-root         123  0.0  0.0      0     0 ?        I    12:59   0:00 [kworker/u4:4-events_unbound]
-root         172  0.2  0.0      0     0 ?        I    12:59   0:00 [kworker/0:2-events]
-root         173  0.0  0.0      0     0 ?        S    12:59   0:00 [scsi_eh_0]
-root         174  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-scsi_tmf_0]
-root         209  0.0  0.0      0     0 ?        S    12:59   0:00 [jbd2/sda3-8]
-root         210  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ext4-rsv-conversion]
-root         308  0.0  0.0      0     0 ?        S    12:59   0:00 [psimon]
-root         425  0.0  0.0      0     0 ?        S    12:59   0:00 [irq/14-vmwgfx]
-root         426  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-ttm]
-dhcpcd       602  0.0  0.2  10112  4404 ?        S    12:59   0:00 dhcpcd: enp0s8 [ip4] [ip6]
-root         603  0.0  0.1  10120  2340 ?        S    12:59   0:00 dhcpcd: [privileged proxy] enp0s8 [ip4] [ip6]
-dhcpcd       604  0.0  0.1  10104  2192 ?        S    12:59   0:00 dhcpcd: [network proxy] enp0s8 [ip4] [ip6]
-dhcpcd       605  0.0  0.1  10100  2184 ?        S    12:59   0:00 dhcpcd: [control proxy] enp0s8 [ip4] [ip6]
-root         697  0.0  0.0      0     0 ?        I<   12:59   0:00 [kworker/R-cfg80211]
-root         755  0.0  0.3  11528  7440 ?        Ss   12:59   0:00 sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups
-dhcpcd       937  0.0  0.1  10120  2276 ?        S    12:59   0:00 dhcpcd: [BPF ARP] enp0s8 10.0.2.15
-dhcpcd       938  0.0  0.1  10120  2340 ?        S    12:59   0:00 dhcpcd: [DHCP6 proxy] fe80::b7b8:e744:21a6:8423
-dhcpcd       954  0.0  0.1  10120  2340 ?        S    12:59   0:00 dhcpcd: [DHCP6 proxy] fd17:625c:f037:2:8307:51b1:887b:35
-dhcpcd       991  0.0  0.1  10120  2340 ?        S    12:59   0:00 dhcpcd: [BOOTP proxy] 10.0.2.15
-root         992  0.0  0.5  21924 11956 ?        Ss   12:59   0:00 sshd-session: vlad [priv]
-root         998  0.0  0.0      0     0 ?        S    12:59   0:00 [psimon]
-dhcpcd      1037  0.0  0.1  10120  2340 ?        S    13:03   0:00 dhcpcd: [DHCP6 proxy] fd17:625c:f037:2:a00:27ff:fe0c:6ebe
-root        1040  0.5  0.0      0     0 ?        I    13:05   0:00 [kworker/0:0-events]
-vlad        1042  0.0  0.1   6280  2096 pts/0    S+   13:06   0:00 grep \[
+vlad@debian13:~$ ps -eo pid,ppid,user,tty,stat,cmd | awk '$2==2 || $1==2'
+      2       0 root     ?        S    [kthreadd]
+      3       2 root     ?        S    [pool_workqueue_release]
+      4       2 root     ?        I<   [kworker/R-kvfree_rcu_reclaim]
+      5       2 root     ?        I<   [kworker/R-rcu_gp]
+      6       2 root     ?        I<   [kworker/R-sync_wq]
+      7       2 root     ?        I<   [kworker/R-slub_flushwq]
+      8       2 root     ?        I<   [kworker/R-netns]
+     10       2 root     ?        I<   [kworker/0:0H-events_highpri]
+     13       2 root     ?        I<   [kworker/R-mm_percpu_wq]
+     14       2 root     ?        I    [rcu_tasks_rude_kthread]
+     15       2 root     ?        I    [rcu_tasks_trace_kthread]
+     16       2 root     ?        S    [ksoftirqd/0]
+     17       2 root     ?        I    [rcu_sched]
+     18       2 root     ?        S    [rcu_exp_par_gp_kthread_worker/0]
+     19       2 root     ?        S    [rcu_exp_gp_kthread_worker]
+     20       2 root     ?        S    [migration/0]
+     21       2 root     ?        S    [cpuhp/0]
+     23       2 root     ?        S    [kdevtmpfs]
+     24       2 root     ?        I<   [kworker/R-inet_frag_wq]
+     25       2 root     ?        S    [kauditd]
+     26       2 root     ?        S    [khungtaskd]
+     27       2 root     ?        I    [kworker/u4:1-events_unbound]
+     28       2 root     ?        S    [oom_reaper]
+     29       2 root     ?        I<   [kworker/R-writeback]
+     30       2 root     ?        S    [kcompactd0]
+     31       2 root     ?        SN   [ksmd]
+     32       2 root     ?        SN   [khugepaged]
+     33       2 root     ?        I<   [kworker/R-kintegrityd]
+     34       2 root     ?        I<   [kworker/R-kblockd]
+     35       2 root     ?        I<   [kworker/R-blkcg_punt_bio]
+     36       2 root     ?        I<   [kworker/R-tpm_dev_wq]
+     37       2 root     ?        I<   [kworker/R-edac-poller]
+     38       2 root     ?        I<   [kworker/R-devfreq_wq]
+     39       2 root     ?        S    [watchdogd]
+     40       2 root     ?        I<   [kworker/R-quota_events_unbound]
+     41       2 root     ?        I<   [kworker/0:1H-kblockd]
+     42       2 root     ?        S    [kswapd0]
+     46       2 root     ?        I    [kworker/u4:3-ipv6_addrconf]
+     51       2 root     ?        I<   [kworker/R-kthrotld]
+     55       2 root     ?        I<   [kworker/R-acpi_thermal_pm]
+     56       2 root     ?        I<   [kworker/R-mld]
+     57       2 root     ?        I<   [kworker/R-ipv6_addrconf]
+     62       2 root     ?        I<   [kworker/R-kstrp]
+     64       2 root     ?        I<   [kworker/u5:0]
+    121       2 root     ?        I    [kworker/u4:4-flush-8:0]
+    173       2 root     ?        S    [scsi_eh_0]
+    174       2 root     ?        I<   [kworker/R-scsi_tmf_0]
+    210       2 root     ?        S    [jbd2/sda3-8]
+    211       2 root     ?        I<   [kworker/R-ext4-rsv-conversion]
+    307       2 root     ?        S    [psimon]
+    424       2 root     ?        S    [irq/14-vmwgfx]
+    425       2 root     ?        I<   [kworker/R-ttm]
+    689       2 root     ?        I<   [kworker/R-cfg80211]
+   1284       2 root     ?        S    [psimon]
+   1544       2 root     ?        I    [kworker/0:0-events]
+   1559       2 root     ?        I    [kworker/0:1-events]
+   1590       2 root     ?        I    [kworker/0:2-events_power_efficient]
 vlad@debian13:~$ 
 ```
 
@@ -206,19 +191,30 @@ vlad@debian13:~$
 > * запущены, как правило, от `root` или от специального служебного пользователя
 
 ```bash
-vlad@debian13:~$ ps aux | grep -v '\[' | awk '$7 == "?"'
-root           1  0.0  0.6  24124 13956 ?        Ss   12:59   0:00 /sbin/init
-root         252  0.0  0.7  51260 15672 ?        Ss   12:59   0:00 /usr/lib/systemd/systemd-journald
-systemd+     298  0.0  0.3  92168  7584 ?        Ssl  12:59   0:00 /usr/lib/systemd/systemd-timesyncd
-root         306  0.0  0.4  36392  9804 ?        Ss   12:59   0:00 /usr/lib/systemd/systemd-udevd
-root         579  0.0  0.1   6984  2728 ?        Ss   12:59   0:00 /usr/sbin/cron -f
-message+     593  0.0  0.2   8528  4460 ?        Ss   12:59   0:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-root         600  0.0  0.4  19180  8500 ?        Ss   12:59   0:00 /usr/lib/systemd/systemd-logind
-daemon       608  0.0  0.1   3928  2180 ?        Ss   12:59   0:00 /usr/sbin/atd -f
-Debian-+     930  0.0  1.1  41988 22960 ?        Ss   12:59   0:00 /usr/sbin/exim4 -bdf -q30m
-vlad        1000  0.0  0.5  22548 11920 ?        Ss   12:59   0:00 /usr/lib/systemd/systemd --user
-vlad        1002  0.0  0.1  26476  3996 ?        S    12:59   0:00 (sd-pam)
-vlad        1015  0.0  0.3  22180  7372 ?        S    12:59   0:00 sshd-session: vlad@pts/0
+vlad@debian13:~$ ps -eo pid,ppid,user,tty,stat,cmd | awk '$4=="?" && $2!=2 && $1!=2'
+      1       0 root     ?        Ss   /sbin/init
+    256       1 root     ?        Ss   /usr/lib/systemd/systemd-journald
+    297       1 systemd+ ?        Ssl  /usr/lib/systemd/systemd-timesyncd
+    302       1 root     ?        Ss   /usr/lib/systemd/systemd-udevd
+    578       1 root     ?        Ss   /usr/sbin/cron -f
+    592       1 message+ ?        Ss   /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+    600       1 dhcpcd   ?        S    dhcpcd: enp0s8 [ip4] [ip6]
+    601     600 root     ?        S    dhcpcd: [privileged proxy] enp0s8 [ip4] [ip6]
+    602     600 dhcpcd   ?        S    dhcpcd: [network proxy] enp0s8 [ip4] [ip6]
+    603     600 dhcpcd   ?        S    dhcpcd: [control proxy] enp0s8 [ip4] [ip6]
+    605       1 root     ?        Ss   /usr/lib/systemd/systemd-logind
+    607       1 daemon   ?        Ss   /usr/sbin/atd -f
+    880       1 root     ?        Ss   sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups
+    998       1 Debian-+ ?        Ss   /usr/sbin/exim4 -bdf -q30m
+   1004     601 dhcpcd   ?        S    dhcpcd: [DHCP6 proxy] fe80::b7b8:e744:21a6:8423
+   1006     601 dhcpcd   ?        S    dhcpcd: [BPF ARP] enp0s8 10.0.2.15
+   1023     601 dhcpcd   ?        S    dhcpcd: [DHCP6 proxy] fd17:625c:f037:2:8307:51b1:887b:35
+   1059     601 dhcpcd   ?        S    dhcpcd: [BOOTP proxy] 10.0.2.15
+   1060     880 root     ?        Ss   sshd-session: vlad [priv]
+   1068       1 vlad     ?        Ss   /usr/lib/systemd/systemd --user
+   1070    1068 vlad     ?        S    (sd-pam)
+   1083    1060 vlad     ?        S    sshd-session: vlad@pts/0
+   1107     601 dhcpcd   ?        S    dhcpcd: [DHCP6 proxy] fd17:625c:f037:2:a00:27ff:fe0c:6ebe
 vlad@debian13:~$ 
 ```
 
@@ -229,12 +225,14 @@ vlad@debian13:~$
 > Процессы, запущенные интерактивно конкретным пользователем, привязанные к терминалу (TTY не ?)
 
 ```bash
-vlad@debian13:~$ ps aux | awk '$7 != "?"'
-USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
-root         685  0.0  0.1   7716  2220 tty1     Ss+  12:59   0:00 /sbin/agetty -o -- \u --noreset --noclear - linux
-vlad        1016  0.0  0.2   8660  5480 pts/0    Ss   12:59   0:00 -bash
-vlad        1124  100  0.1   9008  3688 pts/0    R+   13:12   0:00 ps aux
-vlad        1125  0.0  0.0   6404  1964 pts/0    S+   13:12   0:00 awk $7 != "?"
+vlad@debian13:~$ ps -eo pid,ppid,user,tty,stat,cmd | awk '$4!="?"' 
+    PID    PPID USER     TT       STAT CMD
+    688       1 root     tty1     Ss+  /sbin/agetty -o -- \u --noreset --noclear - linux
+   1084    1083 vlad     pts/0    Ss   -bash
+   1575    1084 vlad     pts/0    T    man ls
+   1585    1575 vlad     pts/0    T    pager
+   1610    1084 vlad     pts/0    R+   ps -eo pid,ppid,user,tty,stat,cmd
+   1611    1084 vlad     pts/0    S+   awk $4!="?"
 vlad@debian13:~$ 
 ```
 
@@ -334,6 +332,37 @@ vlad@debian13:~$ ps afx
     930 ?        Ss     0:00 /usr/sbin/exim4 -bdf -q30m
    1000 ?        Ss     0:00 /usr/lib/systemd/systemd --user
    1002 ?        S      0:00  \_ (sd-pam)
+#############################################################################
+vlad@debian13:~$ ps -eo pid,ppid,tty,stat,time,cmd --forest | sed -n '/ \/sbin\/init/,$p'
+      1       0 ?        Ss   00:00:00 /sbin/init
+    256       1 ?        Ss   00:00:00 /usr/lib/systemd/systemd-journald
+    297       1 ?        Ssl  00:00:00 /usr/lib/systemd/systemd-timesyncd
+    302       1 ?        Ss   00:00:00 /usr/lib/systemd/systemd-udevd
+    578       1 ?        Ss   00:00:00 /usr/sbin/cron -f
+    592       1 ?        Ss   00:00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+    600       1 ?        S    00:00:00 dhcpcd: enp0s8 [ip4] [ip6]
+    601     600 ?        S    00:00:00  \_ dhcpcd: [privileged proxy] enp0s8 [ip4] [ip6]
+   1004     601 ?        S    00:00:00  |   \_ dhcpcd: [DHCP6 proxy] fe80::b7b8:e744:21a6:8423
+   1006     601 ?        S    00:00:00  |   \_ dhcpcd: [BPF ARP] enp0s8 10.0.2.15
+   1023     601 ?        S    00:00:00  |   \_ dhcpcd: [DHCP6 proxy] fd17:625c:f037:2:8307:51b1:887b:35
+   1059     601 ?        S    00:00:00  |   \_ dhcpcd: [BOOTP proxy] 10.0.2.15
+   1107     601 ?        S    00:00:00  |   \_ dhcpcd: [DHCP6 proxy] fd17:625c:f037:2:a00:27ff:fe0c:6ebe
+    602     600 ?        S    00:00:00  \_ dhcpcd: [network proxy] enp0s8 [ip4] [ip6]
+    603     600 ?        S    00:00:00  \_ dhcpcd: [control proxy] enp0s8 [ip4] [ip6]
+    605       1 ?        Ss   00:00:00 /usr/lib/systemd/systemd-logind
+    607       1 ?        Ss   00:00:00 /usr/sbin/atd -f
+    688       1 tty1     Ss+  00:00:00 /sbin/agetty -o -- \u --noreset --noclear - linux
+    880       1 ?        Ss   00:00:00 sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups
+   1060     880 ?        Ss   00:00:00  \_ sshd-session: vlad [priv]
+   1083    1060 ?        S    00:00:05      \_ sshd-session: vlad@pts/0
+   1084    1083 pts/0    Ss   00:00:00          \_ -bash
+   1575    1084 pts/0    T    00:00:00              \_ man ls
+   1585    1575 pts/0    T    00:00:00              |   \_ pager
+   1646    1084 pts/0    R+   00:00:00              \_ ps -eo pid,ppid,tty,stat,time,cmd --forest
+   1647    1084 pts/0    S+   00:00:00              \_ sed -n / \/sbin\/init/,$p
+    998       1 ?        Ss   00:00:00 /usr/sbin/exim4 -bdf -q30m
+   1068       1 ?        Ss   00:00:00 /usr/lib/systemd/systemd --user
+   1070    1068 ?        S    00:00:00  \_ (sd-pam)
 vlad@debian13:~$ 
 ```
 
@@ -352,8 +381,28 @@ vlad@debian13:~$
 «страховочный» родитель для всей системы.
 
 ```bash
-vlad@debian13:~$ pstree -p $$
-bash(1016)───pstree(1170)
+vlad@debian13:~$ pstree -sp $$
+systemd(1)───sshd(880)───sshd-session(1060)───sshd-session(1083)───bash(1084)───pstree(1718)
+vlad@debian13:~$                                                                └─pstree(1665)
+vlad@debian13:~$ pstree -p 1
+systemd(1)─┬─agetty(688)
+           ├─atd(607)
+           ├─cron(578)
+           ├─dbus-daemon(592)
+           ├─dhcpcd(600)─┬─dhcpcd(601)─┬─dhcpcd(1004)
+           │             │             ├─dhcpcd(1006)
+           │             │             ├─dhcpcd(1023)
+           │             │             ├─dhcpcd(1059)
+           │             │             └─dhcpcd(1107)
+           │             ├─dhcpcd(602)
+           │             └─dhcpcd(603)
+           ├─exim4(998)
+           ├─sshd(880)───sshd-session(1060)───sshd-session(1083)───bash(1084)───pstree(1719)
+           ├─systemd(1068)───(sd-pam)(1070)
+           ├─systemd-journal(256)
+           ├─systemd-logind(605)
+           ├─systemd-timesyn(297)───{systemd-timesyn}(306)
+           └─systemd-udevd(302)
 vlad@debian13:~$ 
 ```
 
