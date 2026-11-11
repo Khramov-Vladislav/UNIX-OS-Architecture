@@ -1,0 +1,7 @@
+# создаётся скриптом setup.sh
+/dst/
+/dst with space/
+/ro_dst/
+/noread_src/
+/new_dst/
+/src/empty_dir/
