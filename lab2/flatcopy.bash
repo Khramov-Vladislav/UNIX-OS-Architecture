@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#
+
 # flatcopy.bash - плоское копирование обычных файлов.
 #
 # НАЗНАЧЕНИЕ
@@ -11,7 +11,7 @@
 #   файл.
 #
 # ИСПОЛЬЗОВАНИЕ
-#   flatcopy.bash [-h|--help] [-v|--verbose] [-n] [-p] <исходная_директория> <целевая_директория>
+#   flatcopy.bash [-h|--help] [-v|--verbose] [-n|--nothing] [-p|--parents] <исходная_директория> <целевая_директория>
 #
 # МОДИФИКАТОРЫ
 #   -h, --help      (help)     вывести краткую справку и завершить работу;
@@ -52,7 +52,7 @@ usage() {
    файл.
 
  ИСПОЛЬЗОВАНИЕ
-   flatcopy.bash [-h|--help] [-v|--verbose] [-n] [-p] <исходная_директория> <целевая_директория>
+   flatcopy.bash [-h|--help] [-v|--verbose] [-n|--nothing] [-p|--parents] <исходная_директория> <целевая_директория>
 
  МОДИФИКАТОРЫ
    -h, --help      (help)     вывести краткую справку и завершить работу;
@@ -152,7 +152,7 @@ if [ -e "$dst" ]; then
     [ -w "$dst" ] && [ -x "$dst" ] || usage_error "'$dst': нет прав на запись в директорию"
 fi
 
-# абсолютные физические пути для сравнения.
+# абсолютные физические пути для сравнения
 src_abs=$(cd -P -- "$src" && pwd -P) || exit 2
 if [ -d "$dst" ]; then
     dst_abs=$(cd -P -- "$dst" && pwd -P) || exit 2
@@ -164,7 +164,6 @@ fi
 [ "$src_abs" = "$dst_abs" ] && usage_error "исходная и целевая директории совпадают"
 
 # основной алгоритм
-# Множество уже обработанных имён.
 seen="/"
 copied=0
 duplicates=0
@@ -176,10 +175,12 @@ while IFS= read -r -d '' file; do
         continue
     fi
 
+#   целевая директория лежит в начальной
     case $file in
         "$dst_abs"/*) continue ;;
     esac
 
+#   проверка дубликата имени файла
     name=${file##*/}
 
     case $seen in
@@ -192,6 +193,7 @@ while IFS= read -r -d '' file; do
             ;;
     esac
 
+#   проверка конечной директории
     target="$dst_abs/$name"
 
     if [ -L "$target" ] || { [ -e "$target" ] && [ ! -f "$target" ]; }; then
