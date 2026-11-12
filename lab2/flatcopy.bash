@@ -27,18 +27,24 @@
 #
 # ОСОБЕННОСТИ
 #   * Копируются только обычные файлы
+#   * Модификаторы можно указывать как до, так и после директорий.
 #   * Если целевая директория находится внутри исходной, её содержимое
 #     при обходе пропускается.
 #   * Имена файлов могут содержать пробелы, переводы строк и любые
 #     спецсимволы.
+#   * Выводятся только сообщения самого сценария; сообщения системных
+#     утилит (mkdir, cp, find) подавляются и заменяются собственными.
 #
 # КОДЫ ВОЗВРАТА
 #   0 - успешно;
 #   1 - ошибка при копировании файлов;
 #   2 - неверные модификаторы или аргументы.
 
+# Имя сценария без пути (для сообщений об ошибках).
 PROG=${0##*/}
 
+# usage - печатает справку (назначение, синтаксис, модификаторы, аргументы,
+#   коды возврата) в stdout. Вызывается по -h/--help. Аргументов не берёт.
 usage() {
     cat <<EOF
  flatcopy.bash - плоское копирование обычных файлов.
@@ -68,10 +74,13 @@ usage() {
 
  ОСОБЕННОСТИ
    * Копируются только обычные файлы
+   * Модификаторы можно указывать как до, так и после директорий.
    * Если целевая директория находится внутри исходной, её содержимое
      при обходе пропускается.
    * Имена файлов могут содержать пробелы, переводы строк и любые
      спецсимволы.
+   * Выводятся только сообщения самого сценария; сообщения системных
+     утилит (mkdir, cp, find) подавляются и заменяются собственными.
 
  КОДЫ ВОЗВРАТА
    0 - успешно;
@@ -80,35 +89,72 @@ usage() {
 EOF
 }
 
-# проверка модификаторов
+# usage_error СООБЩЕНИЕ - сообщает о неверном использовании сценария:
+#   печатает СООБЩЕНИЕ и подсказку про -h в stderr и завершает весь
+#   сценарий с кодом 2.
 usage_error() {
     echo "$PROG: $1" >&2
     echo "Справка: $PROG -h" >&2
     exit 2
 }
 
+# warn СООБЩЕНИЕ - печатает предупреждение в stderr и возвращает управление;
+#   работа сценария продолжается (используется для дубликатов имён).
 warn() {
     echo "$PROG: предупреждение: $1" >&2
+}
+
+# Определяет, что на самом деле происходит с путём $1.
+# Результат в переменных:
+#   path_state - exists  : путь существует;
+#                missing : пути нет, при этом все существующие родители
+#                          доступны, т.е. его действительно не существует;
+#                denied  : один из родительских каталогов закрыт для входа,
+#                          поэтому сказать, существует ли путь, нельзя;
+#   path_anc   - ближайший существующий родительский каталог.
+probe_path() {
+    local d=$1 parent
+    path_anc=
+    if [ -e "$d" ]; then
+        path_state=exists
+        return
+    fi
+    path_state=missing
+    while :; do
+        parent=$(dirname -- "$d")
+        if [ -d "$parent" ]; then
+            path_anc=$parent
+            [ -x "$parent" ] || path_state=denied
+            return
+        fi
+        [ "$parent" = "$d" ] && return
+        d=$parent
+    done
 }
 
 verbose=0
 nothing=0
 make_dst=0
 
-args=()
+# Модификаторы можно задавать как до, так и после операндов (директорий):
+# опции и операнды раскладываются по разным массивам, затем собираются
+# в порядке "опции -- операнды".
+opts=()
+ops=()
 while [ $# -gt 0 ]; do
     case $1 in
-        --help|-help)       args+=(-h) ;;
-        --verbose|-verbose) args+=(-v) ;;
-        --nothing)          args+=(-n) ;;
-        --parents)          args+=(-p) ;;
-        --)                 args+=("$@"); break ;;
+        --help|-help)       opts+=(-h) ;;
+        --verbose|-verbose) opts+=(-v) ;;
+        --nothing)          opts+=(-n) ;;
+        --parents)          opts+=(-p) ;;
+        --)                 shift; ops+=("$@"); break ;;
         --*)                usage_error "неизвестный модификатор -- '$1'" ;;
-        *)                  args+=("$1") ;;
+        -?*)                opts+=("$1") ;;
+        *)                  ops+=("$1") ;;
     esac
     shift
 done
-set -- "${args[@]}"
+set -- "${opts[@]}" -- "${ops[@]}"
 
 while getopts ":hvnp" opt; do
     case $opt in
@@ -131,16 +177,28 @@ dst=$2
 [ -z "$src" ] && usage_error "исходная директория задана пустой строкой"
 [ -z "$dst" ] && usage_error "целевая директория задана пустой строкой"
 
-[ -e "$src" ] || usage_error "'$src': исходная директория не существует"
+probe_path "$src"
+case $path_state in
+    missing) usage_error "'$src': исходная директория не существует" ;;
+    denied)  usage_error "'$src': нет доступа (запрещён вход в '$path_anc', существование не проверить)" ;;
+esac
 [ -d "$src" ] || usage_error "'$src': не является директорией"
 [ -r "$src" ] && [ -x "$src" ] || usage_error "'$src': нет прав на чтение директории"
 
-if [ ! -e "$dst" ]; then
+probe_path "$dst"
+if [ "$path_state" = denied ]; then
+    usage_error "'$dst': нет доступа (запрещён вход в '$path_anc', существование не проверить)"
+fi
+
+if [ "$path_state" = missing ]; then
     if [ $make_dst -eq 1 ]; then
+        if [ -z "$path_anc" ] || [ ! -w "$path_anc" ]; then
+            usage_error "'$dst': нет прав на создание директории в '${path_anc:-?}'"
+        fi
         if [ $nothing -eq 1 ]; then
             echo "создание директории '$dst'"
         else
-            mkdir -p -- "$dst" || usage_error "'$dst': не удалось создать директорию"
+            mkdir -p -- "$dst" 2>/dev/null || usage_error "'$dst': не удалось создать директорию"
         fi
     else
         usage_error "'$dst': целевая директория не существует (используйте -p для создания)"
@@ -153,9 +211,9 @@ if [ -e "$dst" ]; then
 fi
 
 # абсолютные физические пути для сравнения
-src_abs=$(cd -P -- "$src" && pwd -P) || exit 2
+src_abs=$(cd -P -- "$src" 2>/dev/null && pwd -P) || usage_error "'$src': не удалось определить путь"
 if [ -d "$dst" ]; then
-    dst_abs=$(cd -P -- "$dst" && pwd -P) || exit 2
+    dst_abs=$(cd -P -- "$dst" 2>/dev/null && pwd -P) || usage_error "'$dst': не удалось определить путь"
 else
     # директория ещё не создана
     dst_abs=$(cd -P -- "$(dirname -- "$dst")" 2>/dev/null && pwd -P)/$(basename -- "$dst")
@@ -172,6 +230,7 @@ errors=0
 while IFS= read -r -d '' file; do
     if [ "$file" = "find-error" ]; then
         errors=$((errors + 1))
+        echo "$PROG: ошибка: часть содержимого '$src' недоступна для обхода" >&2
         continue
     fi
 
@@ -193,7 +252,6 @@ while IFS= read -r -d '' file; do
             ;;
     esac
 
-#   проверка конечной директории
     target="$dst_abs/$name"
 
     if [ -L "$target" ] || { [ -e "$target" ] && [ ! -f "$target" ]; }; then
@@ -205,15 +263,16 @@ while IFS= read -r -d '' file; do
     [ $verbose -eq 1 ] && echo "'$file' -> '$target'"
 
     if [ $nothing -eq 0 ]; then
-        if cp -f -p -- "$file" "$target"; then
+        if cp -f -p -- "$file" "$target" 2>/dev/null; then
             copied=$((copied + 1))
         else
             errors=$((errors + 1))
+            echo "$PROG: ошибка: не удалось скопировать '$file' -> '$target'" >&2
         fi
     else
         copied=$((copied + 1))
     fi
-done < <(find "$src_abs" -type f -print0 || printf 'find-error\0')
+done < <(find "$src_abs" -type f -print0 2>/dev/null || printf 'find-error\0')
 
 if [ $verbose -eq 1 ]; then
     [ $nothing -eq 1 ] && action="будет скопировано" || action="скопировано"
