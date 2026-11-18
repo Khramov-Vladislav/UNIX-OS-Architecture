@@ -1,52 +1,15 @@
-/*
- * filemond.c — демон слежения за изменениями файлов в каталоге.
- *
- * НАЗНАЧЕНИЕ
- *   Читает конфигурационный файл (каталог и интервал проверки), переходит
- *   в режим демона и через заданные промежутки времени рекурсивно обходит
- *   каталог, сравнивая текущее состояние файлов с предыдущим «снимком».
- *   Результат каждой проверки (созданные, удалённые, изменённые файлы или
- *   отсутствие изменений) записывается в файл журнала.
- *
- * ИСПОЛЬЗОВАНИЕ
- *   filemond [-h] [-f] <конфигурационный_файл>
- *
- *   -h  вывести справку и завершить работу;
- *   -f  (foreground) не уходить в фон — удобно для отладки.
- *
- * КОНФИГУРАЦИОННЫЙ ФАЙЛ
- *   Строки вида «ключ = значение», комментарии начинаются с '#'.
- *     directory = /путь/к/каталогу   (обязательно)
- *     interval  = 10                 (секунды, обязательно, > 0)
- *     logfile   = /tmp/filemond.log  (необязательно)
- *     pidfile   = /tmp/filemond.pid  (необязательно)
- *
- * СИГНАЛЫ
- *   SIGHUP   перечитать конфигурационный файл (и переоткрыть журнал);
- *            если конфигурация некорректна — продолжить работу со старой;
- *   SIGTERM  корректно завершить работу с записью в журнал
- *            (SIGINT обрабатывается так же — для режима -f).
- *
- * КРИТЕРИЙ МОДИФИКАЦИИ
- *   Файл считается изменённым, если изменились время модификации (mtime),
- *   размер, номер inode или тип файла. Символические ссылки не
- *   разыменовываются (обход с FTW_PHYS).
- *
- * СБОРКА
- *   make            (или: cc -Wall -Wextra -O2 -o filemond filemond.c)
- */
-
 #define _XOPEN_SOURCE 700
-#define _DEFAULT_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#ifdef __APPLE__
 #define _DARWIN_C_SOURCE
+#endif
 
-#include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <ftw.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,570 +18,472 @@
 #include <time.h>
 #include <unistd.h>
 
-/* Наносекундная часть mtime называется по-разному в Linux и macOS. */
 #ifdef __APPLE__
-#define ST_MTIM(st) ((st)->st_mtimespec)
+#define STAT_MTIME(st) ((st)->st_mtimespec)
 #else
-#define ST_MTIM(st) ((st)->st_mtim)
+#define STAT_MTIME(st) ((st)->st_mtim)
 #endif
 
-#define DEFAULT_LOGFILE "/tmp/filemond.log"
-#define DEFAULT_PIDFILE "/tmp/filemond.pid"
-
-/* ---------- Конфигурация ---------- */
-
-struct config {
-    char directory[PATH_MAX];
-    char logfile[PATH_MAX];
-    char pidfile[PATH_MAX];
-    unsigned interval;
-};
-
-/* ---------- Снимок состояния каталога ---------- */
-
-struct entry {
+typedef struct {
     char *path;
-    mode_t mode;
     off_t size;
-    ino_t ino;
-    struct timespec mtime;
-};
+    time_t mtime_sec;
+    long mtime_nsec;
+    ino_t inode;
+    mode_t mode;
+} FileInfo;
 
-struct snapshot {
-    struct entry *items;
+typedef struct {
+    char directory[PATH_MAX];
+    char log_file[PATH_MAX];
+    unsigned int interval;
+} Config;
+
+typedef struct {
+    FileInfo *items;
     size_t count;
-    size_t cap;
-};
+    size_t capacity;
+} Snapshot;
 
-/* ---------- Глобальное состояние ---------- */
+static volatile sig_atomic_t reload_requested = 0;
+static volatile sig_atomic_t stop_requested = 0;
 
-static volatile sig_atomic_t got_sighup = 0;
-static volatile sig_atomic_t got_sigterm = 0;
-
-static char config_path[PATH_MAX];
-static struct config cfg;
-static FILE *logfp = NULL;
-static int foreground = 0;
-
-/* nftw() не позволяет передать пользовательский аргумент в callback,
- * поэтому заполняемый снимок передаётся через глобальную переменную. */
-static struct snapshot *walk_target = NULL;
-
-/* ---------- Журнал ---------- */
-
-static void log_msg(const char *fmt, ...)
-{
-    char ts[32];
-    time_t now = time(NULL);
-    struct tm tm;
-    va_list ap;
-    FILE *out = logfp ? logfp : stderr;
-
-    localtime_r(&now, &tm);
-    strftime(ts, sizeof ts, "%Y-%m-%d %H:%M:%S", &tm);
-
-    fprintf(out, "%s [%ld] ", ts, (long)getpid());
-    va_start(ap, fmt);
-    vfprintf(out, fmt, ap);
-    va_end(ap);
-    fputc('\n', out);
-    fflush(out);
-}
-
-static int open_log(const char *path)
-{
-    FILE *fp = fopen(path, "a");
-
-    if (fp == NULL)
-        return -1;
-    if (logfp != NULL)
-        fclose(logfp);
-    logfp = fp;
-    return 0;
-}
-
-/* ---------- Разбор конфигурации ---------- */
-
-static char *trim(char *s)
-{
-    char *end;
-
-    while (isspace((unsigned char)*s))
-        s++;
-    end = s + strlen(s);
-    while (end > s && isspace((unsigned char)end[-1]))
-        *--end = '\0';
-    return s;
-}
-
-/* Читает конфигурацию в *out. При ошибке возвращает -1 и пишет
- * пояснение в errbuf; *out при этом не изменяется. */
-static int load_config(const char *path, struct config *out,
-                       char *errbuf, size_t errlen)
-{
-    FILE *fp;
-    char line[PATH_MAX + 64];
-    struct config c;
-    struct stat st;
-    unsigned lineno = 0;
-    int have_dir = 0, have_interval = 0;
-
-    memset(&c, 0, sizeof c);
-    snprintf(c.logfile, sizeof c.logfile, "%s", DEFAULT_LOGFILE);
-    snprintf(c.pidfile, sizeof c.pidfile, "%s", DEFAULT_PIDFILE);
-
-    if ((fp = fopen(path, "r")) == NULL) {
-        snprintf(errbuf, errlen, "cannot open config %s: %s",
-                 path, strerror(errno));
-        return -1;
-    }
-
-    while (fgets(line, sizeof line, fp) != NULL) {
-        char *key, *val, *eq, *hash;
-
-        lineno++;
-        if ((hash = strchr(line, '#')) != NULL)
-            *hash = '\0';
-        key = trim(line);
-        if (*key == '\0')
-            continue;
-
-        if ((eq = strchr(key, '=')) == NULL) {
-            snprintf(errbuf, errlen, "%s:%u: expected 'key = value'",
-                     path, lineno);
-            fclose(fp);
-            return -1;
-        }
-        *eq = '\0';
-        key = trim(key);
-        val = trim(eq + 1);
-
-        if (strcmp(key, "directory") == 0) {
-            if (realpath(val, c.directory) == NULL) {
-                snprintf(errbuf, errlen, "%s:%u: directory '%s': %s",
-                         path, lineno, val, strerror(errno));
-                fclose(fp);
-                return -1;
-            }
-            have_dir = 1;
-        } else if (strcmp(key, "interval") == 0) {
-            char *endp;
-            unsigned long n;
-
-            errno = 0;
-            n = strtoul(val, &endp, 10);
-            if (errno != 0 || *endp != '\0' || endp == val || n == 0 ||
-                n > 86400 || val[0] == '-') {
-                snprintf(errbuf, errlen,
-                         "%s:%u: interval must be an integer in 1..86400",
-                         path, lineno);
-                fclose(fp);
-                return -1;
-            }
-            c.interval = (unsigned)n;
-            have_interval = 1;
-        } else if (strcmp(key, "logfile") == 0) {
-            snprintf(c.logfile, sizeof c.logfile, "%s", val);
-        } else if (strcmp(key, "pidfile") == 0) {
-            snprintf(c.pidfile, sizeof c.pidfile, "%s", val);
-        } else {
-            snprintf(errbuf, errlen, "%s:%u: unknown key '%s'",
-                     path, lineno, key);
-            fclose(fp);
-            return -1;
-        }
-    }
-    fclose(fp);
-
-    if (!have_dir || !have_interval) {
-        snprintf(errbuf, errlen, "%s: '%s' is not set", path,
-                 !have_dir ? "directory" : "interval");
-        return -1;
-    }
-    if (stat(c.directory, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        snprintf(errbuf, errlen, "%s is not a directory", c.directory);
-        return -1;
-    }
-    /* После демонизации текущий каталог — "/", поэтому пути к журналу
-     * и pid-файлу должны быть абсолютными. */
-    if (c.logfile[0] != '/' || c.pidfile[0] != '/') {
-        snprintf(errbuf, errlen, "logfile and pidfile must be absolute paths");
-        return -1;
-    }
-
-    *out = c;
-    return 0;
-}
-
-/* ---------- Снимки ---------- */
-
-static void snapshot_free(struct snapshot *s)
-{
-    size_t i;
-
-    for (i = 0; i < s->count; i++)
-        free(s->items[i].path);
-    free(s->items);
-    s->items = NULL;
-    s->count = s->cap = 0;
-}
-
-static int walk_cb(const char *path, const struct stat *st,
-                   int type, struct FTW *ftw)
-{
-    struct snapshot *s = walk_target;
-    struct entry *e;
-
-    if (ftw->level == 0)        /* сам корневой каталог не учитываем */
-        return 0;
-    if (type == FTW_DNR || type == FTW_NS) {
-        log_msg("WARNING: cannot access %s", path);
-        if (type == FTW_NS)
-            return 0;
-    }
-
-    if (s->count == s->cap) {
-        size_t ncap = s->cap ? s->cap * 2 : 256;
-        struct entry *n = realloc(s->items, ncap * sizeof *n);
-
-        if (n == NULL)
-            return -1;
-        s->items = n;
-        s->cap = ncap;
-    }
-    e = &s->items[s->count];
-    if ((e->path = strdup(path)) == NULL)
-        return -1;
-    e->mode = st->st_mode;
-    e->size = st->st_size;
-    e->ino = st->st_ino;
-    e->mtime = ST_MTIM(st);
-    s->count++;
-    return 0;
-}
-
-static int entry_cmp(const void *a, const void *b)
-{
-    return strcmp(((const struct entry *)a)->path,
-                  ((const struct entry *)b)->path);
-}
-
-static int snapshot_take(const char *dir, struct snapshot *s)
-{
-    walk_target = s;
-    if (nftw(dir, walk_cb, 32, FTW_PHYS) != 0) {
-        log_msg("ERROR: scanning %s failed: %s", dir, strerror(errno));
-        snapshot_free(s);
-        return -1;
-    }
-    qsort(s->items, s->count, sizeof *s->items, entry_cmp);
-    return 0;
-}
-
-static const char *kind(mode_t m)
-{
-    if (S_ISDIR(m))  return "directory";
-    if (S_ISLNK(m))  return "symlink";
-    if (S_ISREG(m))  return "file";
-    return "special file";
-}
-
-static int entry_changed(const struct entry *a, const struct entry *b)
-{
-    return (a->mode & S_IFMT) != (b->mode & S_IFMT) ||
-           a->size != b->size || a->ino != b->ino ||
-           a->mtime.tv_sec != b->mtime.tv_sec ||
-           a->mtime.tv_nsec != b->mtime.tv_nsec;
-}
-
-/* Сравнивает два отсортированных снимка слиянием и пишет различия
- * в журнал. Каталоги в «изменённые» не попадают: их mtime меняется
- * при каждом создании/удалении файла, что уже отражено отдельно. */
-static void snapshot_diff(const struct snapshot *old, const struct snapshot *cur)
-{
-    size_t i = 0, j = 0;
-    unsigned added = 0, removed = 0, modified = 0;
-
-    while (i < old->count || j < cur->count) {
-        int c;
-
-        if (i == old->count)
-            c = 1;
-        else if (j == cur->count)
-            c = -1;
-        else
-            c = strcmp(old->items[i].path, cur->items[j].path);
-
-        if (c < 0) {
-            log_msg("  DELETED  %s: %s", kind(old->items[i].mode),
-                    old->items[i].path);
-            removed++;
-            i++;
-        } else if (c > 0) {
-            log_msg("  CREATED  %s: %s", kind(cur->items[j].mode),
-                    cur->items[j].path);
-            added++;
-            j++;
-        } else {
-            if (entry_changed(&old->items[i], &cur->items[j]) &&
-                !(S_ISDIR(old->items[i].mode) && S_ISDIR(cur->items[j].mode))) {
-                log_msg("  MODIFIED %s: %s (size %lld -> %lld)",
-                        kind(cur->items[j].mode), cur->items[j].path,
-                        (long long)old->items[i].size,
-                        (long long)cur->items[j].size);
-                modified++;
-            }
-            i++;
-            j++;
-        }
-    }
-
-    if (added + removed + modified == 0)
-        log_msg("Check: no changes (%zu entries)", cur->count);
-    else
-        log_msg("Check: %u created, %u deleted, %u modified (%zu entries)",
-                added, removed, modified, cur->count);
-}
-
-/* ---------- PID-файл ---------- */
-
-/* Возвращает pid уже работающего экземпляра из pid-файла или 0. */
-static long running_pid(const char *path)
-{
-    FILE *fp;
-    long pid = 0;
-
-    if ((fp = fopen(path, "r")) == NULL)
-        return 0;
-    if (fscanf(fp, "%ld", &pid) != 1 || pid <= 0 || pid == (long)getpid() ||
-        kill((pid_t)pid, 0) != 0)
-        pid = 0;
-    fclose(fp);
-    return pid;
-}
-
-static int write_pidfile(const char *path)
-{
-    FILE *fp;
-
-    if ((fp = fopen(path, "w")) == NULL)
-        return -1;
-    fprintf(fp, "%ld\n", (long)getpid());
-    fclose(fp);
-    return 0;
-}
-
-/* ---------- Сигналы ---------- */
-
-static void on_signal(int sig)
-{
-    if (sig == SIGHUP)
-        got_sighup = 1;
-    else
-        got_sigterm = sig;
-}
-
-static void setup_signals(void)
-{
-    struct sigaction sa;
-
-    memset(&sa, 0, sizeof sa);
-    sa.sa_handler = on_signal;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;            /* без SA_RESTART: sleep() прерывается */
-    sigaction(SIGHUP, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGINT, &sa, NULL);
-
-    sa.sa_handler = SIG_IGN;
-    sigaction(SIGPIPE, &sa, NULL);
-}
-
-/* ---------- Демонизация ---------- */
-
-static void daemonize(void)
-{
-    pid_t pid;
-    int fd;
-
-    /* 1-й fork: родитель возвращает управление оболочке,
-     * потомок гарантированно не лидер группы — можно вызвать setsid(). */
-    if ((pid = fork()) < 0) {
-        perror("fork");
-        exit(EXIT_FAILURE);
-    }
-    if (pid > 0)
-        exit(EXIT_SUCCESS);
-
-    /* Новая сессия: отрываемся от управляющего терминала. */
-    if (setsid() < 0) {
-        perror("setsid");
-        exit(EXIT_FAILURE);
-    }
-
-    /* 2-й fork: процесс перестаёт быть лидером сессии и уже не сможет
-     * случайно получить управляющий терминал. */
-    signal(SIGHUP, SIG_IGN);
-    if ((pid = fork()) < 0) {
-        perror("fork");
-        exit(EXIT_FAILURE);
-    }
-    if (pid > 0)
-        exit(EXIT_SUCCESS);
-
-    umask(022);
-    if (chdir("/") != 0) {
-        perror("chdir");
-        exit(EXIT_FAILURE);
-    }
-
-    /* Стандартные потоки перенаправляем в /dev/null. */
-    if ((fd = open("/dev/null", O_RDWR)) >= 0) {
-        dup2(fd, STDIN_FILENO);
-        dup2(fd, STDOUT_FILENO);
-        dup2(fd, STDERR_FILENO);
-        if (fd > STDERR_FILENO)
-            close(fd);
+static void handle_signal(int signal_number) {
+    if (signal_number == SIGHUP) {
+        reload_requested = 1;
+    } else if (signal_number == SIGTERM) {
+        stop_requested = 1;
     }
 }
 
-/* ---------- Перечитывание конфигурации ---------- */
-
-static void reload_config(struct snapshot *snap)
-{
-    struct config newcfg;
-    char err[PATH_MAX + 128];
-
-    log_msg("SIGHUP received: reloading %s", config_path);
-    if (load_config(config_path, &newcfg, err, sizeof err) != 0) {
-        log_msg("ERROR: %s; keeping previous configuration", err);
+static void log_message(const char *log_path, const char *format, ...) {
+    FILE *log = fopen(log_path, "a");
+    if (log == NULL) {
         return;
     }
 
-    /* Журнал переоткрываем всегда — это позволяет его ротировать. */
-    if (open_log(newcfg.logfile) != 0) {
-        log_msg("ERROR: cannot open log %s: %s; keeping %s",
-                newcfg.logfile, strerror(errno), cfg.logfile);
-        snprintf(newcfg.logfile, sizeof newcfg.logfile, "%s", cfg.logfile);
+    time_t now = time(NULL);
+    struct tm tm_now;
+    char timestamp[32];
+
+    if (localtime_r(&now, &tm_now) != NULL) {
+        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &tm_now);
+    } else {
+        snprintf(timestamp, sizeof(timestamp), "unknown-time");
     }
 
-    if (strcmp(newcfg.pidfile, cfg.pidfile) != 0) {
-        unlink(cfg.pidfile);
-        if (write_pidfile(newcfg.pidfile) != 0)
-            log_msg("WARNING: cannot write pidfile %s: %s",
-                    newcfg.pidfile, strerror(errno));
-    }
+    fprintf(log, "[%s] ", timestamp);
 
-    if (strcmp(newcfg.directory, cfg.directory) != 0) {
-        log_msg("Directory changed: %s -> %s", cfg.directory, newcfg.directory);
-        snapshot_free(snap);
-        if (snapshot_take(newcfg.directory, snap) == 0)
-            log_msg("Initial scan: %zu entries", snap->count);
-    }
+    va_list args;
+    va_start(args, format);
+    vfprintf(log, format, args);
+    va_end(args);
 
-    cfg = newcfg;
-    log_msg("Configuration: directory=%s interval=%us logfile=%s",
-            cfg.directory, cfg.interval, cfg.logfile);
+    fputc('\n', log);
+    fflush(log);
+    fclose(log);
 }
 
-/* ---------- main ---------- */
+static char *trim(char *text) {
+    while (*text == ' ' || *text == '\t' || *text == '\r' || *text == '\n') {
+        text++;
+    }
 
-static void usage(FILE *out)
-{
-    fprintf(out, "Usage: filemond [-h] [-f] <config_file>\n"
-                 "  -h  show this help\n"
-                 "  -f  stay in foreground (do not daemonize)\n");
+    size_t length = strlen(text);
+    while (length > 0 &&
+           (text[length - 1] == ' ' || text[length - 1] == '\t' ||
+            text[length - 1] == '\r' || text[length - 1] == '\n')) {
+        text[--length] = '\0';
+    }
+    return text;
 }
 
-int main(int argc, char *argv[])
-{
-    struct snapshot snap = {0};
-    char err[PATH_MAX + 128];
-    long oldpid;
-    int opt;
-
-    while ((opt = getopt(argc, argv, "hf")) != -1) {
-        switch (opt) {
-        case 'h':
-            usage(stdout);
-            return EXIT_SUCCESS;
-        case 'f':
-            foreground = 1;
-            break;
-        default:
-            usage(stderr);
-            return EXIT_FAILURE;
-        }
-    }
-    if (optind != argc - 1) {
-        usage(stderr);
-        return EXIT_FAILURE;
+static int load_config(const char *config_path, Config *config, char *error, size_t error_size) {
+    FILE *file = fopen(config_path, "r");
+    if (file == NULL) {
+        snprintf(error, error_size, "cannot open config '%s': %s",
+                 config_path, strerror(errno));
+        return -1;
     }
 
-    /* Абсолютный путь нужен, чтобы перечитывать конфиг после chdir("/"). */
-    if (realpath(argv[optind], config_path) == NULL) {
-        fprintf(stderr, "filemond: %s: %s\n", argv[optind], strerror(errno));
-        return EXIT_FAILURE;
-    }
-    if (load_config(config_path, &cfg, err, sizeof err) != 0) {
-        fprintf(stderr, "filemond: %s\n", err);
-        return EXIT_FAILURE;
-    }
-    if (open_log(cfg.logfile) != 0) {
-        fprintf(stderr, "filemond: cannot open log %s: %s\n",
-                cfg.logfile, strerror(errno));
-        return EXIT_FAILURE;
-    }
+    Config parsed = {0};
+    char *line = NULL;
+    size_t capacity = 0;
+    ssize_t length;
+    unsigned int line_number = 0;
+    bool have_directory = false;
+    bool have_interval = false;
+    bool have_log = false;
 
-    /* Проверяем до ухода в фон, чтобы ошибку увидел пользователь. */
-    if ((oldpid = running_pid(cfg.pidfile)) != 0) {
-        fprintf(stderr, "filemond: already running (pid %ld)\n", oldpid);
-        return EXIT_FAILURE;
-    }
+    while ((length = getline(&line, &capacity, file)) != -1) {
+        (void)length;
+        line_number++;
+        char *content = trim(line);
 
-    if (!foreground)
-        daemonize();
-    setup_signals();
-    if (write_pidfile(cfg.pidfile) != 0)
-        log_msg("WARNING: cannot write pidfile %s: %s",
-                cfg.pidfile, strerror(errno));
-
-    log_msg("Daemon started: config=%s directory=%s interval=%us",
-            config_path, cfg.directory, cfg.interval);
-    if (snapshot_take(cfg.directory, &snap) == 0)
-        log_msg("Initial scan: %zu entries", snap.count);
-
-    while (!got_sigterm) {
-        unsigned left = cfg.interval;
-
-        /* sleep() прерывается сигналом и возвращает остаток времени. */
-        while (left > 0 && !got_sigterm && !got_sighup)
-            left = sleep(left);
-
-        if (got_sigterm)
-            break;
-        if (got_sighup) {
-            got_sighup = 0;
-            reload_config(&snap);
-            continue;           /* отсчёт интервала начинается заново */
+        if (*content == '\0' || *content == '#') {
+            continue;
         }
 
-        {
-            struct snapshot cur = {0};
+        char *equals = strchr(content, '=');
+        if (equals == NULL) {
+            snprintf(error, error_size, "invalid line %u: expected key=value", line_number);
+            free(line);
+            fclose(file);
+            return -1;
+        }
 
-            if (snapshot_take(cfg.directory, &cur) == 0) {
-                snapshot_diff(&snap, &cur);
-                snapshot_free(&snap);
-                snap = cur;
+        *equals = '\0';
+        char *key = trim(content);
+        char *value = trim(equals + 1);
+
+        if (strcmp(key, "directory") == 0) {
+            if (*value == '\0' || strlen(value) >= sizeof(parsed.directory)) {
+                snprintf(error, error_size, "invalid directory on line %u", line_number);
+                free(line);
+                fclose(file);
+                return -1;
+            }
+            strcpy(parsed.directory, value);
+            have_directory = true;
+        } else if (strcmp(key, "interval") == 0) {
+            char *end = NULL;
+            errno = 0;
+            unsigned long number = strtoul(value, &end, 10);
+            if (errno != 0 || end == value || *trim(end) != '\0' ||
+                number == 0 || number > 86400) {
+                snprintf(error, error_size, "interval must be between 1 and 86400 seconds (line %u)",
+                         line_number);
+                free(line);
+                fclose(file);
+                return -1;
+            }
+            parsed.interval = (unsigned int)number;
+            have_interval = true;
+        } else if (strcmp(key, "log_file") == 0) {
+            if (*value == '\0' || strlen(value) >= sizeof(parsed.log_file)) {
+                snprintf(error, error_size, "invalid log_file on line %u", line_number);
+                free(line);
+                fclose(file);
+                return -1;
+            }
+            strcpy(parsed.log_file, value);
+            have_log = true;
+        } else {
+            snprintf(error, error_size, "unknown parameter '%s' on line %u", key, line_number);
+            free(line);
+            fclose(file);
+            return -1;
+        }
+    }
+
+    free(line);
+    fclose(file);
+
+    if (!have_directory || !have_interval || !have_log) {
+        snprintf(error, error_size,
+                 "config must contain directory, interval and log_file");
+        return -1;
+    }
+
+    struct stat directory_stat;
+    if (stat(parsed.directory, &directory_stat) != 0 ||
+        !S_ISDIR(directory_stat.st_mode)) {
+        snprintf(error, error_size, "directory '%s' does not exist or is not a directory",
+                 parsed.directory);
+        return -1;
+    }
+
+    if (parsed.directory[0] != '/' || parsed.log_file[0] != '/') {
+        snprintf(error, error_size, "directory and log_file must be absolute paths");
+        return -1;
+    }
+
+    FILE *log = fopen(parsed.log_file, "a");
+    if (log == NULL) {
+        snprintf(error, error_size, "cannot open log file '%s': %s",
+                 parsed.log_file, strerror(errno));
+        return -1;
+    }
+    fclose(log);
+
+    *config = parsed;
+    return 0;
+}
+
+static void free_snapshot(Snapshot *snapshot) {
+    for (size_t i = 0; i < snapshot->count; i++) {
+        free(snapshot->items[i].path);
+    }
+    free(snapshot->items);
+    snapshot->items = NULL;
+    snapshot->count = 0;
+    snapshot->capacity = 0;
+}
+
+static int add_file(Snapshot *snapshot, const char *path, const struct stat *st) {
+    if (snapshot->count == snapshot->capacity) {
+        size_t new_capacity = snapshot->capacity == 0 ? 32 : snapshot->capacity * 2;
+        FileInfo *new_items = realloc(snapshot->items, new_capacity * sizeof(*new_items));
+        if (new_items == NULL) {
+            return -1;
+        }
+        snapshot->items = new_items;
+        snapshot->capacity = new_capacity;
+    }
+
+    FileInfo *item = &snapshot->items[snapshot->count];
+    item->path = strdup(path);
+    if (item->path == NULL) {
+        return -1;
+    }
+    item->size = st->st_size;
+    item->mtime_sec = STAT_MTIME(st).tv_sec;
+    item->mtime_nsec = STAT_MTIME(st).tv_nsec;
+    item->inode = st->st_ino;
+    item->mode = st->st_mode;
+    snapshot->count++;
+    return 0;
+}
+
+/* Рекурсивно обходит каталоги; символические ссылки не разыменовываются. */
+static int scan_directory(const char *path, Snapshot *snapshot) {
+    DIR *directory = opendir(path);
+    if (directory == NULL) {
+        return -1;
+    }
+
+    struct dirent *entry;
+    int result = 0;
+
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        char child_path[PATH_MAX];
+        int written = snprintf(child_path, sizeof(child_path), "%s/%s", path, entry->d_name);
+        if (written < 0 || (size_t)written >= sizeof(child_path)) {
+            result = -1;
+            continue;
+        }
+
+        struct stat st;
+        if (lstat(child_path, &st) != 0) {
+            result = -1;
+            continue;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            if (scan_directory(child_path, snapshot) != 0) {
+                result = -1;
+            }
+        } else if (S_ISREG(st.st_mode)) {
+            if (add_file(snapshot, child_path, &st) != 0) {
+                result = -1;
+                break;
             }
         }
+        /* Символические ссылки и специальные файлы пропускаются. */
     }
 
-    log_msg("%s received: daemon stopped",
-            got_sigterm == SIGINT ? "SIGINT" : "SIGTERM");
-    snapshot_free(&snap);
-    unlink(cfg.pidfile);
-    if (logfp != NULL)
-        fclose(logfp);
+    if (closedir(directory) != 0) {
+        result = -1;
+    }
+    return result;
+}
+
+static const FileInfo *find_file(const Snapshot *snapshot, const char *path) {
+    for (size_t i = 0; i < snapshot->count; i++) {
+        if (strcmp(snapshot->items[i].path, path) == 0) {
+            return &snapshot->items[i];
+        }
+    }
+    return NULL;
+}
+
+static bool file_changed(const FileInfo *old_file, const FileInfo *new_file) {
+    return old_file->size != new_file->size ||
+           old_file->mtime_sec != new_file->mtime_sec ||
+           old_file->mtime_nsec != new_file->mtime_nsec ||
+           old_file->inode != new_file->inode ||
+           old_file->mode != new_file->mode;
+}
+
+static int take_snapshot(const char *directory, Snapshot *snapshot) {
+    memset(snapshot, 0, sizeof(*snapshot));
+    if (scan_directory(directory, snapshot) != 0) {
+        free_snapshot(snapshot);
+        return -1;
+    }
+    return 0;
+}
+
+static bool compare_snapshots(const Snapshot *old_snapshot,
+                              const Snapshot *new_snapshot,
+                              const char *log_path) {
+    bool changed = false;
+    for (size_t i = 0; i < new_snapshot->count; i++) {
+        const FileInfo *current = &new_snapshot->items[i];
+        const FileInfo *previous = find_file(old_snapshot, current->path);
+
+        if (previous == NULL) {
+            log_message(log_path, "CREATED: %s", current->path);
+            changed = true;
+        } else if (file_changed(previous, current)) {
+            log_message(log_path, "MODIFIED: %s", current->path);
+            changed = true;
+        }
+    }
+
+    for (size_t i = 0; i < old_snapshot->count; i++) {
+        const FileInfo *previous = &old_snapshot->items[i];
+        if (find_file(new_snapshot, previous->path) == NULL) {
+            log_message(log_path, "DELETED: %s", previous->path);
+            changed = true;
+        }
+    }
+    if (!changed) {
+        log_message(log_path, "No file changes detected.");
+    }
+    return changed;
+}
+
+static int daemonize_process(void) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        return -1;
+    }
+    if (pid > 0) {
+        exit(EXIT_SUCCESS);
+    }
+
+    if (setsid() < 0) {
+        return -1;
+    }
+
+    pid = fork();
+    if (pid < 0) {
+        return -1;
+    }
+    if (pid > 0) {
+        exit(EXIT_SUCCESS);
+    }
+
+    umask(0);
+    if (chdir("/") != 0) {
+        return -1;
+    }
+
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+
+    return 0;
+}
+
+static int make_absolute_config_path(const char *argument, char *result, size_t size) {
+    if (realpath(argument, result) == NULL) {
+        return -1;
+    }
+    if (strlen(result) >= size) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s /absolute/path/to/daemon.conf\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    char config_path[PATH_MAX];
+    if (make_absolute_config_path(argv[1], config_path, sizeof(config_path)) != 0) {
+        perror("Cannot resolve config path");
+        return EXIT_FAILURE;
+    }
+
+    Config config;
+    char error[512];
+    if (load_config(config_path, &config, error, sizeof(error)) != 0) {
+        fprintf(stderr, "Configuration error: %s\n", error);
+        return EXIT_FAILURE;
+    }
+
+    if (daemonize_process() != 0) {
+        /* После daemonize stderr уже закрыт, поэтому это сообщение может быть недоступно. */
+        return EXIT_FAILURE;
+    }
+
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = handle_signal;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+
+    if (sigaction(SIGHUP, &action, NULL) != 0 ||
+        sigaction(SIGTERM, &action, NULL) != 0) {
+        log_message(config.log_file, "ERROR: cannot install signal handlers: %s",
+                    strerror(errno));
+        return EXIT_FAILURE;
+    }
+
+    Snapshot previous;
+    if (take_snapshot(config.directory, &previous) != 0) {
+        log_message(config.log_file, "ERROR: cannot scan directory '%s': %s",
+                    config.directory, strerror(errno));
+        return EXIT_FAILURE;
+    }
+
+    log_message(config.log_file, "Daemon started. Directory: %s; interval: %u sec",
+                config.directory, config.interval);
+
+    while (!stop_requested) {
+        unsigned int remaining = config.interval;
+        while (remaining > 0 && !stop_requested && !reload_requested) {
+            remaining = sleep(remaining);
+        }
+
+        if (stop_requested) {
+            break;
+        }
+
+        if (reload_requested) {
+            reload_requested = 0;
+            Config new_config;
+            if (load_config(config_path, &new_config, error, sizeof(error)) == 0) {
+                Snapshot new_previous;
+                if (take_snapshot(new_config.directory, &new_previous) == 0) {
+                    free_snapshot(&previous);
+                    config = new_config;
+                    previous = new_previous;
+                    log_message(config.log_file,
+                                "Configuration reloaded. Directory: %s; interval: %u sec",
+                                config.directory, config.interval);
+                } else {
+                    log_message(config.log_file,
+                                "ERROR: config reload scan failed; keeping old configuration: %s",
+                                strerror(errno));
+                }
+            } else {
+                log_message(config.log_file, "ERROR: config reload failed: %s", error);
+            }
+            continue;
+        }
+
+        Snapshot current;
+        if (take_snapshot(config.directory, &current) != 0) {
+            log_message(config.log_file, "ERROR: directory scan failed: %s", strerror(errno));
+            continue;
+        }
+
+        compare_snapshots(&previous, &current, config.log_file);
+        free_snapshot(&previous);
+        previous = current;
+    }
+
+    free_snapshot(&previous);
+    log_message(config.log_file, "Daemon stopped by SIGTERM.");
     return EXIT_SUCCESS;
 }
