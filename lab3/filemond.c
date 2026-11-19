@@ -1,7 +1,8 @@
 #define _XOPEN_SOURCE 700
 #define _POSIX_C_SOURCE 200809L
-#ifdef __APPLE__
-#define _DARWIN_C_SOURCE
+
+#ifndef __linux__
+#error "filemond is intended to build and run on Linux"
 #endif
 
 #include <dirent.h>
@@ -15,14 +16,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <syslog.h>
 #include <time.h>
 #include <unistd.h>
-
-#ifdef __APPLE__
-#define STAT_MTIME(st) ((st)->st_mtimespec)
-#else
-#define STAT_MTIME(st) ((st)->st_mtim)
-#endif
 
 typedef struct {
     char *path;
@@ -56,9 +52,21 @@ static void handle_signal(int signal_number) {
     }
 }
 
-static void log_message(const char *log_path, const char *format, ...) {
+static void log_message(int priority, const char *log_path,
+                        const char *format, ...) {
+    char message[PATH_MAX + 512];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+
+    syslog(priority, "%s", message);
+
     FILE *log = fopen(log_path, "a");
     if (log == NULL) {
+        int saved_errno = errno;
+        syslog(LOG_ERR, "cannot open file journal '%s': %s",
+               log_path, strerror(saved_errno));
         return;
     }
 
@@ -72,14 +80,7 @@ static void log_message(const char *log_path, const char *format, ...) {
         snprintf(timestamp, sizeof(timestamp), "unknown-time");
     }
 
-    fprintf(log, "[%s] ", timestamp);
-
-    va_list args;
-    va_start(args, format);
-    vfprintf(log, format, args);
-    va_end(args);
-
-    fputc('\n', log);
+    fprintf(log, "[%s] %s\n", timestamp, message);
     fflush(log);
     fclose(log);
 }
@@ -188,7 +189,7 @@ static int load_config(const char *config_path, Config *config, char *error, siz
     struct stat directory_stat;
     if (stat(parsed.directory, &directory_stat) != 0 ||
         !S_ISDIR(directory_stat.st_mode)) {
-        snprintf(error, error_size, "directory '%s' does not exist or is not a directory",
+        snprintf(error, error_size, "directory '%.400s' does not exist or is not a directory",
                  parsed.directory);
         return -1;
     }
@@ -200,7 +201,7 @@ static int load_config(const char *config_path, Config *config, char *error, siz
 
     FILE *log = fopen(parsed.log_file, "a");
     if (log == NULL) {
-        snprintf(error, error_size, "cannot open log file '%s': %s",
+        snprintf(error, error_size, "cannot open log file '%.350s': %.100s",
                  parsed.log_file, strerror(errno));
         return -1;
     }
@@ -237,15 +238,14 @@ static int add_file(Snapshot *snapshot, const char *path, const struct stat *st)
         return -1;
     }
     item->size = st->st_size;
-    item->mtime_sec = STAT_MTIME(st).tv_sec;
-    item->mtime_nsec = STAT_MTIME(st).tv_nsec;
+    item->mtime_sec = st->st_mtim.tv_sec;
+    item->mtime_nsec = st->st_mtim.tv_nsec;
     item->inode = st->st_ino;
     item->mode = st->st_mode;
     snapshot->count++;
     return 0;
 }
 
-/* Рекурсивно обходит каталоги; символические ссылки не разыменовываются. */
 static int scan_directory(const char *path, Snapshot *snapshot) {
     DIR *directory = opendir(path);
     if (directory == NULL) {
@@ -253,9 +253,17 @@ static int scan_directory(const char *path, Snapshot *snapshot) {
     }
 
     struct dirent *entry;
-    int result = 0;
+    int scan_error = 0;
 
-    while ((entry = readdir(directory)) != NULL) {
+    for (;;) {
+        errno = 0;
+        entry = readdir(directory);
+        if (entry == NULL) {
+            if (errno != 0) {
+                scan_error = errno;
+            }
+            break;
+        }
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
@@ -263,33 +271,46 @@ static int scan_directory(const char *path, Snapshot *snapshot) {
         char child_path[PATH_MAX];
         int written = snprintf(child_path, sizeof(child_path), "%s/%s", path, entry->d_name);
         if (written < 0 || (size_t)written >= sizeof(child_path)) {
-            result = -1;
+            if (scan_error == 0) {
+                scan_error = ENAMETOOLONG;
+            }
             continue;
         }
 
         struct stat st;
         if (lstat(child_path, &st) != 0) {
-            result = -1;
+            if (scan_error == 0) {
+                scan_error = errno;
+            }
             continue;
         }
 
         if (S_ISDIR(st.st_mode)) {
             if (scan_directory(child_path, snapshot) != 0) {
-                result = -1;
+                if (scan_error == 0) {
+                    scan_error = errno != 0 ? errno : EIO;
+                }
             }
-        } else if (S_ISREG(st.st_mode)) {
+        } else {
             if (add_file(snapshot, child_path, &st) != 0) {
-                result = -1;
+                if (scan_error == 0) {
+                    scan_error = errno != 0 ? errno : ENOMEM;
+                }
                 break;
             }
         }
-        /* Символические ссылки и специальные файлы пропускаются. */
     }
 
     if (closedir(directory) != 0) {
-        result = -1;
+        if (scan_error == 0) {
+            scan_error = errno;
+        }
     }
-    return result;
+    if (scan_error != 0) {
+        errno = scan_error;
+        return -1;
+    }
+    return 0;
 }
 
 static const FileInfo *find_file(const Snapshot *snapshot, const char *path) {
@@ -312,7 +333,9 @@ static bool file_changed(const FileInfo *old_file, const FileInfo *new_file) {
 static int take_snapshot(const char *directory, Snapshot *snapshot) {
     memset(snapshot, 0, sizeof(*snapshot));
     if (scan_directory(directory, snapshot) != 0) {
+        int saved_errno = errno;
         free_snapshot(snapshot);
+        errno = saved_errno;
         return -1;
     }
     return 0;
@@ -327,10 +350,10 @@ static bool compare_snapshots(const Snapshot *old_snapshot,
         const FileInfo *previous = find_file(old_snapshot, current->path);
 
         if (previous == NULL) {
-            log_message(log_path, "CREATED: %s", current->path);
+            log_message(LOG_INFO, log_path, "CREATED: %s", current->path);
             changed = true;
         } else if (file_changed(previous, current)) {
-            log_message(log_path, "MODIFIED: %s", current->path);
+            log_message(LOG_INFO, log_path, "MODIFIED: %s", current->path);
             changed = true;
         }
     }
@@ -338,12 +361,12 @@ static bool compare_snapshots(const Snapshot *old_snapshot,
     for (size_t i = 0; i < old_snapshot->count; i++) {
         const FileInfo *previous = &old_snapshot->items[i];
         if (find_file(new_snapshot, previous->path) == NULL) {
-            log_message(log_path, "DELETED: %s", previous->path);
+            log_message(LOG_INFO, log_path, "DELETED: %s", previous->path);
             changed = true;
         }
     }
     if (!changed) {
-        log_message(log_path, "No file changes detected.");
+        log_message(LOG_INFO, log_path, "No file changes detected.");
     }
     return changed;
 }
@@ -412,9 +435,10 @@ int main(int argc, char **argv) {
     }
 
     if (daemonize_process() != 0) {
-        /* После daemonize stderr уже закрыт, поэтому это сообщение может быть недоступно. */
         return EXIT_FAILURE;
     }
+
+    openlog("filemond", LOG_PID | LOG_NDELAY, LOG_DAEMON);
 
     struct sigaction action;
     memset(&action, 0, sizeof(action));
@@ -424,19 +448,22 @@ int main(int argc, char **argv) {
 
     if (sigaction(SIGHUP, &action, NULL) != 0 ||
         sigaction(SIGTERM, &action, NULL) != 0) {
-        log_message(config.log_file, "ERROR: cannot install signal handlers: %s",
+        log_message(LOG_ERR, config.log_file, "cannot install signal handlers: %s",
                     strerror(errno));
+        closelog();
         return EXIT_FAILURE;
     }
 
     Snapshot previous;
     if (take_snapshot(config.directory, &previous) != 0) {
-        log_message(config.log_file, "ERROR: cannot scan directory '%s': %s",
+        log_message(LOG_ERR, config.log_file, "cannot scan directory '%s': %s",
                     config.directory, strerror(errno));
+        closelog();
         return EXIT_FAILURE;
     }
 
-    log_message(config.log_file, "Daemon started. Directory: %s; interval: %u sec",
+    log_message(LOG_INFO, config.log_file,
+                "Daemon started. Directory: %s; interval: %u sec",
                 config.directory, config.interval);
 
     while (!stop_requested) {
@@ -458,23 +485,24 @@ int main(int argc, char **argv) {
                     free_snapshot(&previous);
                     config = new_config;
                     previous = new_previous;
-                    log_message(config.log_file,
+                    log_message(LOG_INFO, config.log_file,
                                 "Configuration reloaded. Directory: %s; interval: %u sec",
                                 config.directory, config.interval);
                 } else {
-                    log_message(config.log_file,
-                                "ERROR: config reload scan failed; keeping old configuration: %s",
+                    log_message(LOG_ERR, config.log_file,
+                                "config reload scan failed; keeping old configuration: %s",
                                 strerror(errno));
                 }
             } else {
-                log_message(config.log_file, "ERROR: config reload failed: %s", error);
+                log_message(LOG_ERR, config.log_file, "config reload failed: %s", error);
             }
             continue;
         }
 
         Snapshot current;
         if (take_snapshot(config.directory, &current) != 0) {
-            log_message(config.log_file, "ERROR: directory scan failed: %s", strerror(errno));
+            log_message(LOG_ERR, config.log_file, "directory scan failed: %s",
+                        strerror(errno));
             continue;
         }
 
@@ -484,6 +512,7 @@ int main(int argc, char **argv) {
     }
 
     free_snapshot(&previous);
-    log_message(config.log_file, "Daemon stopped by SIGTERM.");
+    log_message(LOG_INFO, config.log_file, "Daemon stopped by SIGTERM.");
+    closelog();
     return EXIT_SUCCESS;
 }
