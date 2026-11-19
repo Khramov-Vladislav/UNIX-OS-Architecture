@@ -35,9 +35,17 @@ typedef struct {
 } Config;
 
 typedef struct {
+    char *path;
+    int error_code;
+} ScanIssue;
+
+typedef struct {
     FileInfo *items;
     size_t count;
     size_t capacity;
+    ScanIssue *issues;
+    size_t issue_count;
+    size_t issue_capacity;
 } Snapshot;
 
 static volatile sig_atomic_t reload_requested = 0;
@@ -173,9 +181,38 @@ static void free_snapshot(Snapshot *snapshot) {
         free(snapshot->items[i].path);
     }
     free(snapshot->items);
+    for (size_t i = 0; i < snapshot->issue_count; i++) {
+        free(snapshot->issues[i].path);
+    }
+    free(snapshot->issues);
     snapshot->items = NULL;
     snapshot->count = 0;
     snapshot->capacity = 0;
+    snapshot->issues = NULL;
+    snapshot->issue_count = 0;
+    snapshot->issue_capacity = 0;
+}
+
+static int add_scan_issue(Snapshot *snapshot, const char *path, int error_code) {
+    for (size_t i = 0; i < snapshot->issue_count; i++) {
+        if (strcmp(snapshot->issues[i].path, path) == 0) {
+            snapshot->issues[i].error_code = error_code;
+            return 0;
+        }
+    }
+    if (snapshot->issue_count == snapshot->issue_capacity) {
+        size_t capacity = snapshot->issue_capacity == 0 ? 8 : snapshot->issue_capacity * 2;
+        ScanIssue *issues = realloc(snapshot->issues, capacity * sizeof(*issues));
+        if (issues == NULL) return -1;
+        snapshot->issues = issues;
+        snapshot->issue_capacity = capacity;
+    }
+    ScanIssue *issue = &snapshot->issues[snapshot->issue_count];
+    issue->path = strdup(path);
+    if (issue->path == NULL) return -1;
+    issue->error_code = error_code != 0 ? error_code : EIO;
+    snapshot->issue_count++;
+    return 0;
 }
 
 static int add_file(Snapshot *snapshot, const char *path, const struct stat *st) {
@@ -206,18 +243,20 @@ static int add_file(Snapshot *snapshot, const char *path, const struct stat *st)
 static int scan_directory(const char *path, Snapshot *snapshot) {
     DIR *directory = opendir(path);
     if (directory == NULL) {
-        return -1;
+        return add_scan_issue(snapshot, path, errno);
     }
 
     struct dirent *entry;
-    int scan_error = 0;
 
     for (;;) {
         errno = 0;
         entry = readdir(directory);
         if (entry == NULL) {
             if (errno != 0) {
-                scan_error = errno;
+                if (add_scan_issue(snapshot, path, errno) != 0) {
+                    closedir(directory);
+                    return -1;
+                }
             }
             break;
         }
@@ -228,52 +267,34 @@ static int scan_directory(const char *path, Snapshot *snapshot) {
         char child_path[PATH_MAX];
         int written = snprintf(child_path, sizeof(child_path), "%s/%s", path, entry->d_name);
         if (written < 0 || (size_t)written >= sizeof(child_path)) {
-            if (scan_error == 0) {
-                scan_error = ENAMETOOLONG;
-            }
+            if (add_scan_issue(snapshot, path, ENAMETOOLONG) != 0) goto allocation_error;
             continue;
         }
 
         struct stat st;
         if (lstat(child_path, &st) != 0) {
-            if (scan_error == 0) {
-                scan_error = errno;
-            }
+            if (add_scan_issue(snapshot, child_path, errno) != 0) goto allocation_error;
             continue;
         }
 
         if (S_ISDIR(st.st_mode)) {
             if (add_file(snapshot, child_path, &st) != 0) {
-                if (scan_error == 0) {
-                    scan_error = errno != 0 ? errno : ENOMEM;
-                }
-                break;
+                goto allocation_error;
             }
-            if (scan_directory(child_path, snapshot) != 0) {
-                if (scan_error == 0) {
-                    scan_error = errno != 0 ? errno : EIO;
-                }
-            }
+            if (scan_directory(child_path, snapshot) != 0) goto allocation_error;
         } else {
             if (add_file(snapshot, child_path, &st) != 0) {
-                if (scan_error == 0) {
-                    scan_error = errno != 0 ? errno : ENOMEM;
-                }
-                break;
+                goto allocation_error;
             }
         }
     }
 
-    if (closedir(directory) != 0) {
-        if (scan_error == 0) {
-            scan_error = errno;
-        }
-    }
-    if (scan_error != 0) {
-        errno = scan_error;
-        return -1;
-    }
+    if (closedir(directory) != 0 && add_scan_issue(snapshot, path, errno) != 0) return -1;
     return 0;
+
+allocation_error:
+    closedir(directory);
+    return -1;
 }
 
 static const FileInfo *find_file(const Snapshot *snapshot, const char *path) {
@@ -293,15 +314,66 @@ static bool file_changed(const FileInfo *old_file, const FileInfo *new_file) {
            old_file->mode != new_file->mode;
 }
 
-static int take_snapshot(const char *directory, Snapshot *snapshot) {
+static int take_snapshot(const char *directory, Snapshot *snapshot,
+                         char *failed_path, size_t failed_path_size) {
     memset(snapshot, 0, sizeof(*snapshot));
-    if (scan_directory(directory, snapshot) != 0) {
+    failed_path[0] = '\0';
+    struct stat root_stat;
+    if (lstat(directory, &root_stat) != 0 || add_file(snapshot, directory, &root_stat) != 0 ||
+        scan_directory(directory, snapshot) != 0) {
         int saved_errno = errno;
+        snprintf(failed_path, failed_path_size, "%s", directory);
         free_snapshot(snapshot);
         errno = saved_errno;
         return -1;
     }
     return 0;
+}
+
+static bool path_within(const char *path, const char *directory) {
+    size_t length = strlen(directory);
+    return strncmp(path, directory, length) == 0 &&
+           (path[length] == '\0' || path[length] == '/' ||
+            (length == 1 && directory[0] == '/'));
+}
+
+static int preserve_unscanned_entries(const Snapshot *old_snapshot, Snapshot *current) {
+    for (size_t i = 0; i < old_snapshot->count; i++) {
+        const FileInfo *old = &old_snapshot->items[i];
+        if (find_file(current, old->path) != NULL) continue;
+        bool inaccessible = false;
+        for (size_t j = 0; j < current->issue_count; j++) {
+            if (path_within(old->path, current->issues[j].path)) {
+                inaccessible = true;
+                break;
+            }
+        }
+        if (inaccessible && add_file(current, old->path, &(struct stat){
+                .st_size = old->size, .st_mtim = {old->mtime_sec, old->mtime_nsec},
+                .st_ino = old->inode, .st_mode = old->mode}) != 0) return -1;
+    }
+    return 0;
+}
+
+static void log_issue_changes(const Snapshot *old_snapshot, const Snapshot *current) {
+    for (size_t i = 0; i < current->issue_count; i++) {
+        const ScanIssue *issue = &current->issues[i];
+        const ScanIssue *old = NULL;
+        for (size_t j = 0; j < old_snapshot->issue_count; j++) {
+            if (strcmp(old_snapshot->issues[j].path, issue->path) == 0) {
+                old = &old_snapshot->issues[j]; break;
+            }
+        }
+        if (old == NULL || old->error_code != issue->error_code)
+            log_message(LOG_ERR, "directory scan failed at '%s': %s", issue->path, strerror(issue->error_code));
+    }
+    for (size_t i = 0; i < old_snapshot->issue_count; i++) {
+        const ScanIssue *old = &old_snapshot->issues[i];
+        bool remains = false;
+        for (size_t j = 0; j < current->issue_count; j++)
+            if (strcmp(current->issues[j].path, old->path) == 0) { remains = true; break; }
+        if (!remains) log_message(LOG_INFO, "directory scan resumed at '%s'", old->path);
+    }
 }
 
 static void compare_snapshots(const Snapshot *old_snapshot,
@@ -318,6 +390,9 @@ static void compare_snapshots(const Snapshot *old_snapshot,
             }
         } else if (S_ISDIR(previous->mode) != S_ISDIR(current->mode)) {
             log_message(LOG_INFO, "TYPE CHANGED: %s", current->path);
+        } else if (S_ISDIR(current->mode) &&
+                   (previous->mode & 07777) != (current->mode & 07777)) {
+            log_message(LOG_INFO, "DIRECTORY PERMISSIONS CHANGED: %s", current->path);
         } else if (!S_ISDIR(current->mode) && file_changed(previous, current)) {
             log_message(LOG_INFO, "MODIFIED: %s", current->path);
         }
@@ -423,9 +498,11 @@ int main(int argc, char **argv) {
     }
 
     Snapshot previous;
-    if (take_snapshot(config.directory, &previous) != 0) {
-        log_message(LOG_ERR, "cannot scan directory '%s': %s",
-                    config.directory, strerror(errno));
+    char failed_path[PATH_MAX];
+    if (take_snapshot(config.directory, &previous,
+                      failed_path, sizeof(failed_path)) != 0) {
+        log_message(LOG_ERR, "cannot scan directory at '%s': %s",
+                    failed_path, strerror(errno));
         closelog();
         return EXIT_FAILURE;
     }
@@ -433,6 +510,7 @@ int main(int argc, char **argv) {
     log_message(LOG_INFO,
                 "Daemon started. Directory: %s; interval: %u sec",
                 config.directory, config.interval);
+    log_issue_changes(&(Snapshot){0}, &previous);
 
     while (!stop_requested) {
         unsigned int remaining = config.interval;
@@ -449,7 +527,17 @@ int main(int argc, char **argv) {
             Config new_config;
             if (load_config(config_path, &new_config, error, sizeof(error)) == 0) {
                 Snapshot new_previous;
-                if (take_snapshot(new_config.directory, &new_previous) == 0) {
+                char failed_path[PATH_MAX];
+                if (take_snapshot(new_config.directory, &new_previous,
+                                  failed_path, sizeof(failed_path)) == 0) {
+                    if (preserve_unscanned_entries(&previous, &new_previous) != 0) {
+                        log_message(LOG_ERR,
+                                    "config reload snapshot preparation failed: %s",
+                                    strerror(errno));
+                        free_snapshot(&new_previous);
+                        continue;
+                    }
+                    log_issue_changes(&previous, &new_previous);
                     free_snapshot(&previous);
                     config = new_config;
                     previous = new_previous;
@@ -458,8 +546,8 @@ int main(int argc, char **argv) {
                                 config.directory, config.interval);
                 } else {
                     log_message(LOG_ERR,
-                                "config reload scan failed; keeping old configuration: %s",
-                                strerror(errno));
+                                "config reload scan failed at '%s'; keeping old configuration: %s",
+                                failed_path, strerror(errno));
                 }
             } else {
                 log_message(LOG_ERR, "config reload failed: %s", error);
@@ -468,12 +556,19 @@ int main(int argc, char **argv) {
         }
 
         Snapshot current;
-        if (take_snapshot(config.directory, &current) != 0) {
-            log_message(LOG_ERR, "directory scan failed: %s",
-                        strerror(errno));
+        if (take_snapshot(config.directory, &current,
+                          failed_path, sizeof(failed_path)) != 0) {
+            log_message(LOG_ERR, "directory scan failed at '%s': %s",
+                        failed_path, strerror(errno));
             continue;
         }
 
+        if (preserve_unscanned_entries(&previous, &current) != 0) {
+            log_message(LOG_ERR, "cannot preserve snapshot for incompletely scanned directories: %s", strerror(errno));
+            free_snapshot(&current);
+            continue;
+        }
+        log_issue_changes(&previous, &current);
         compare_snapshots(&previous, &current);
         free_snapshot(&previous);
         previous = current;
