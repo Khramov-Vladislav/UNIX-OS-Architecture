@@ -1,9 +1,9 @@
 #!/bin/bash
 
-VM_NAME="debian13"
-SSH_HOST="localhost"
-SSH_PORT="2222"
-SSH_USER="vlad"
+VM_NAME="${VM_NAME:-debian13}"
+SSH_HOST="${SSH_HOST:-localhost}"
+SSH_PORT="${SSH_PORT:-2222}"
+SSH_USER="${SSH_USER:-vlad}"
 
 if ! VBoxManage list runningvms | grep -q "\"$VM_NAME\""; then
     echo "Starting $VM_NAME..."
@@ -25,4 +25,4 @@ done
 echo "SSH is ready."
 echo "Connecting..."
 
-ssh "$SSH_USER@$SSH_HOST" -p "$SSH_PORT"
+ssh "$SSH_USER@$SSH_HOST" -p "$SSH_PORT" "$@"
