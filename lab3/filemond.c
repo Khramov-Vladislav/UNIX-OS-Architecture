@@ -31,7 +31,6 @@ typedef struct {
 
 typedef struct {
     char directory[PATH_MAX];
-    char log_file[PATH_MAX];
     unsigned int interval;
 } Config;
 
@@ -52,8 +51,7 @@ static void handle_signal(int signal_number) {
     }
 }
 
-static void log_message(int priority, const char *log_path,
-                        const char *format, ...) {
+static void log_message(int priority, const char *format, ...) {
     char message[PATH_MAX + 512];
     va_list args;
     va_start(args, format);
@@ -61,28 +59,6 @@ static void log_message(int priority, const char *log_path,
     va_end(args);
 
     syslog(priority, "%s", message);
-
-    FILE *log = fopen(log_path, "a");
-    if (log == NULL) {
-        int saved_errno = errno;
-        syslog(LOG_ERR, "cannot open file journal '%s': %s",
-               log_path, strerror(saved_errno));
-        return;
-    }
-
-    time_t now = time(NULL);
-    struct tm tm_now;
-    char timestamp[32];
-
-    if (localtime_r(&now, &tm_now) != NULL) {
-        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &tm_now);
-    } else {
-        snprintf(timestamp, sizeof(timestamp), "unknown-time");
-    }
-
-    fprintf(log, "[%s] %s\n", timestamp, message);
-    fflush(log);
-    fclose(log);
 }
 
 static char *trim(char *text) {
@@ -114,7 +90,6 @@ static int load_config(const char *config_path, Config *config, char *error, siz
     unsigned int line_number = 0;
     bool have_directory = false;
     bool have_interval = false;
-    bool have_log = false;
 
     while ((length = getline(&line, &capacity, file)) != -1) {
         (void)length;
@@ -160,15 +135,6 @@ static int load_config(const char *config_path, Config *config, char *error, siz
             }
             parsed.interval = (unsigned int)number;
             have_interval = true;
-        } else if (strcmp(key, "log_file") == 0) {
-            if (*value == '\0' || strlen(value) >= sizeof(parsed.log_file)) {
-                snprintf(error, error_size, "invalid log_file on line %u", line_number);
-                free(line);
-                fclose(file);
-                return -1;
-            }
-            strcpy(parsed.log_file, value);
-            have_log = true;
         } else {
             snprintf(error, error_size, "unknown parameter '%s' on line %u", key, line_number);
             free(line);
@@ -180,9 +146,8 @@ static int load_config(const char *config_path, Config *config, char *error, siz
     free(line);
     fclose(file);
 
-    if (!have_directory || !have_interval || !have_log) {
-        snprintf(error, error_size,
-                 "config must contain directory, interval and log_file");
+    if (!have_directory || !have_interval) {
+        snprintf(error, error_size, "config must contain directory and interval");
         return -1;
     }
 
@@ -194,18 +159,10 @@ static int load_config(const char *config_path, Config *config, char *error, siz
         return -1;
     }
 
-    if (parsed.directory[0] != '/' || parsed.log_file[0] != '/') {
-        snprintf(error, error_size, "directory and log_file must be absolute paths");
+    if (parsed.directory[0] != '/') {
+        snprintf(error, error_size, "directory must be an absolute path");
         return -1;
     }
-
-    FILE *log = fopen(parsed.log_file, "a");
-    if (log == NULL) {
-        snprintf(error, error_size, "cannot open log file '%.350s': %.100s",
-                 parsed.log_file, strerror(errno));
-        return -1;
-    }
-    fclose(log);
 
     *config = parsed;
     return 0;
@@ -286,6 +243,12 @@ static int scan_directory(const char *path, Snapshot *snapshot) {
         }
 
         if (S_ISDIR(st.st_mode)) {
+            if (add_file(snapshot, child_path, &st) != 0) {
+                if (scan_error == 0) {
+                    scan_error = errno != 0 ? errno : ENOMEM;
+                }
+                break;
+            }
             if (scan_directory(child_path, snapshot) != 0) {
                 if (scan_error == 0) {
                     scan_error = errno != 0 ? errno : EIO;
@@ -341,34 +304,35 @@ static int take_snapshot(const char *directory, Snapshot *snapshot) {
     return 0;
 }
 
-static bool compare_snapshots(const Snapshot *old_snapshot,
-                              const Snapshot *new_snapshot,
-                              const char *log_path) {
-    bool changed = false;
+static void compare_snapshots(const Snapshot *old_snapshot,
+                              const Snapshot *new_snapshot) {
     for (size_t i = 0; i < new_snapshot->count; i++) {
         const FileInfo *current = &new_snapshot->items[i];
         const FileInfo *previous = find_file(old_snapshot, current->path);
 
         if (previous == NULL) {
-            log_message(LOG_INFO, log_path, "CREATED: %s", current->path);
-            changed = true;
-        } else if (file_changed(previous, current)) {
-            log_message(LOG_INFO, log_path, "MODIFIED: %s", current->path);
-            changed = true;
+            if (S_ISDIR(current->mode)) {
+                log_message(LOG_INFO, "DIRECTORY CREATED: %s", current->path);
+            } else {
+                log_message(LOG_INFO, "CREATED: %s", current->path);
+            }
+        } else if (S_ISDIR(previous->mode) != S_ISDIR(current->mode)) {
+            log_message(LOG_INFO, "TYPE CHANGED: %s", current->path);
+        } else if (!S_ISDIR(current->mode) && file_changed(previous, current)) {
+            log_message(LOG_INFO, "MODIFIED: %s", current->path);
         }
     }
 
     for (size_t i = 0; i < old_snapshot->count; i++) {
         const FileInfo *previous = &old_snapshot->items[i];
         if (find_file(new_snapshot, previous->path) == NULL) {
-            log_message(LOG_INFO, log_path, "DELETED: %s", previous->path);
-            changed = true;
+            if (S_ISDIR(previous->mode)) {
+                log_message(LOG_INFO, "DIRECTORY DELETED: %s", previous->path);
+            } else {
+                log_message(LOG_INFO, "DELETED: %s", previous->path);
+            }
         }
     }
-    if (!changed) {
-        log_message(LOG_INFO, log_path, "No file changes detected.");
-    }
-    return changed;
 }
 
 static int daemonize_process(void) {
@@ -421,24 +385,28 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
+    openlog("filemond", LOG_PID | LOG_NDELAY, LOG_DAEMON);
+
     char config_path[PATH_MAX];
     if (make_absolute_config_path(argv[1], config_path, sizeof(config_path)) != 0) {
-        perror("Cannot resolve config path");
+        syslog(LOG_ERR, "cannot resolve config path: %s", strerror(errno));
+        closelog();
         return EXIT_FAILURE;
     }
 
     Config config;
     char error[512];
     if (load_config(config_path, &config, error, sizeof(error)) != 0) {
-        fprintf(stderr, "Configuration error: %s\n", error);
+        syslog(LOG_ERR, "configuration error: %s", error);
+        closelog();
         return EXIT_FAILURE;
     }
 
     if (daemonize_process() != 0) {
+        syslog(LOG_ERR, "cannot daemonize process: %s", strerror(errno));
+        closelog();
         return EXIT_FAILURE;
     }
-
-    openlog("filemond", LOG_PID | LOG_NDELAY, LOG_DAEMON);
 
     struct sigaction action;
     memset(&action, 0, sizeof(action));
@@ -448,7 +416,7 @@ int main(int argc, char **argv) {
 
     if (sigaction(SIGHUP, &action, NULL) != 0 ||
         sigaction(SIGTERM, &action, NULL) != 0) {
-        log_message(LOG_ERR, config.log_file, "cannot install signal handlers: %s",
+        log_message(LOG_ERR, "cannot install signal handlers: %s",
                     strerror(errno));
         closelog();
         return EXIT_FAILURE;
@@ -456,13 +424,13 @@ int main(int argc, char **argv) {
 
     Snapshot previous;
     if (take_snapshot(config.directory, &previous) != 0) {
-        log_message(LOG_ERR, config.log_file, "cannot scan directory '%s': %s",
+        log_message(LOG_ERR, "cannot scan directory '%s': %s",
                     config.directory, strerror(errno));
         closelog();
         return EXIT_FAILURE;
     }
 
-    log_message(LOG_INFO, config.log_file,
+    log_message(LOG_INFO,
                 "Daemon started. Directory: %s; interval: %u sec",
                 config.directory, config.interval);
 
@@ -485,34 +453,34 @@ int main(int argc, char **argv) {
                     free_snapshot(&previous);
                     config = new_config;
                     previous = new_previous;
-                    log_message(LOG_INFO, config.log_file,
+                    log_message(LOG_INFO,
                                 "Configuration reloaded. Directory: %s; interval: %u sec",
                                 config.directory, config.interval);
                 } else {
-                    log_message(LOG_ERR, config.log_file,
+                    log_message(LOG_ERR,
                                 "config reload scan failed; keeping old configuration: %s",
                                 strerror(errno));
                 }
             } else {
-                log_message(LOG_ERR, config.log_file, "config reload failed: %s", error);
+                log_message(LOG_ERR, "config reload failed: %s", error);
             }
             continue;
         }
 
         Snapshot current;
         if (take_snapshot(config.directory, &current) != 0) {
-            log_message(LOG_ERR, config.log_file, "directory scan failed: %s",
+            log_message(LOG_ERR, "directory scan failed: %s",
                         strerror(errno));
             continue;
         }
 
-        compare_snapshots(&previous, &current, config.log_file);
+        compare_snapshots(&previous, &current);
         free_snapshot(&previous);
         previous = current;
     }
 
     free_snapshot(&previous);
-    log_message(LOG_INFO, config.log_file, "Daemon stopped by SIGTERM.");
+    log_message(LOG_INFO, "Daemon stopped by SIGTERM.");
     closelog();
     return EXIT_SUCCESS;
 }

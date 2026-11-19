@@ -13,7 +13,7 @@ stop:
 	pkill -TERM -x filemond
 
 status:
-	tail -f /tmp/filemond.log
+	journalctl -t filemond -f
 
 clean:
 	rm -f filemond
