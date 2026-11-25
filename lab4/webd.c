@@ -1,3 +1,8 @@
+/*
+ * Многопроцессный HTTP-сервер статических файлов.
+ * Главный процесс открывает каталог сайта и принимает TCP-соединения.
+ * Для каждого соединения он создаёт потомка, который отвечает на один запрос.
+ */
 #define _POSIX_C_SOURCE 200809L
 #ifdef __APPLE__
 #define _DARWIN_C_SOURCE
@@ -26,6 +31,7 @@ enum { REQUEST_LIMIT = 8192, IO_TIMEOUT = 5, BACKLOG = 64 };
 
 static void reap_children(int signal_number) {
     (void)signal_number;
+    /* Один SIGCHLD может прийти после завершения нескольких потомков. */
     int saved_errno = errno;
     while (waitpid(-1, NULL, WNOHANG) > 0) {
     }
@@ -33,6 +39,7 @@ static void reap_children(int signal_number) {
 }
 
 static int install_signals(void) {
+    /* Игнорируем SIGPIPE, чтобы обработать ошибку send() при обрыве связи. */
     struct sigaction action = {.sa_handler = SIG_IGN};
     sigemptyset(&action.sa_mask);
     if (sigaction(SIGPIPE, &action, NULL) < 0) {
@@ -43,7 +50,7 @@ static int install_signals(void) {
     return sigaction(SIGCHLD, &action, NULL);
 }
 
-/* The initial process waits for the session leader to finish setup. */
+/* Двойной fork() отделяет демон от терминала и возвращает оболочке его PID. */
 static void detach(void) {
     pid_t child = fork();
     if (child < 0) {
@@ -51,6 +58,7 @@ static void detach(void) {
         exit(EXIT_FAILURE);
     }
     if (child > 0) {
+        /* Исходный процесс ждёт результата настройки от промежуточного. */
         int status;
         pid_t result;
         do {
@@ -65,6 +73,7 @@ static void detach(void) {
     }
 
     int null_fd = open("/dev/null", O_RDWR);
+    /* Сохраняем исходный stdout, чтобы сообщить PID после перенаправления. */
     int output = dup(STDOUT_FILENO);
     if (null_fd < 0 || output < 0 || dup2(null_fd, STDIN_FILENO) < 0 ||
         dup2(null_fd, STDOUT_FILENO) < 0 || dup2(null_fd, STDERR_FILENO) < 0) {
@@ -75,6 +84,7 @@ static void detach(void) {
         close(null_fd);
     }
 
+    /* После второго fork() демон больше не является лидером сессии. */
     child = fork();
     if (child < 0) {
         syslog(LOG_ERR, "detach: fork: %s", strerror(errno));
@@ -87,6 +97,7 @@ static void detach(void) {
     close(output);
 }
 
+/* send() может принять часть буфера. Продолжаем с первого неотправленного байта. */
 static int send_all(int client, const void *data, size_t length) {
     const char *bytes = data;
     while (length > 0) {
@@ -104,6 +115,7 @@ static int send_all(int client, const void *data, size_t length) {
     return 0;
 }
 
+/* length задаёт длину тела в байтах. Заголовки заканчиваются пустой строкой. */
 static int send_headers(int client, int status, const char *reason, const char *type,
                         uintmax_t length) {
     char date[64] = "";
@@ -127,6 +139,7 @@ static int send_headers(int client, int status, const char *reason, const char *
 }
 
 static void send_error(int client, int status, const char *reason, bool head_only) {
+    /* Одна ошибка даёт запись в журнале и, если сокет доступен, HTTP-ответ. */
     syslog(LOG_WARNING, "HTTP %d %s", status, reason);
     if (send_headers(client, status, reason, "text/plain; charset=utf-8", strlen(reason) + 1) ==
             0 &&
@@ -137,7 +150,7 @@ static void send_error(int client, int status, const char *reason, bool head_onl
     }
 }
 
-/* Return the HTTP error code, 0 on success or -1 if the connection failed. */
+/* Возвращает 0 при успехе, HTTP-код ошибки или -1, если ответ не отправляем. */
 static int read_request(int client, char request[REQUEST_LIMIT + 1]) {
     size_t used = 0;
     while (used < REQUEST_LIMIT) {
@@ -155,6 +168,10 @@ static int read_request(int client, char request[REQUEST_LIMIT + 1]) {
         if (count == 0) {
             return used == 0 ? -1 : 400;
         }
+        /*
+         * Проверяем конец заголовков по мере чтения. Последовательность
+         * "\r\n\r\n" может оказаться на стыке двух вызовов recv().
+         */
         size_t end = used + (size_t)count;
         for (; used < end; ++used) {
             if (request[used] == '\0') {
@@ -169,6 +186,7 @@ static int read_request(int client, char request[REQUEST_LIMIT + 1]) {
     return 431;
 }
 
+/* Проверяем поля построчно. Для HTTP/1.1 нужен один непустой Host. */
 static bool valid_headers(const char *line, bool host_required) {
     bool has_host = false;
     while (strncmp(line, "\r\n", 2) != 0) {
@@ -213,6 +231,7 @@ static int hex_value(unsigned char byte) {
     return -1;
 }
 
+/* Декодируем %XX в том же буфере и отбрасываем параметры после буквального '?'. */
 static bool decode_path(char *target) {
     unsigned char *input = (unsigned char *)target;
     unsigned char *output = input;
@@ -244,7 +263,10 @@ static bool decode_path(char *target) {
     return true;
 }
 
-/* Resolve each component relative to an open directory, without following links. */
+/*
+ * Путь разрешается относительно открытого корня сайта. Открываем по одному
+ * компоненту, поскольку O_NOFOLLOW действует на последний компонент openat().
+ */
 static int open_file(int root, char *path) {
     if (!*path) {
         return openat(root, "index.html", O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
@@ -261,6 +283,7 @@ static int open_file(int root, char *path) {
             errno = EACCES;
             break;
         }
+        /* O_NONBLOCK позволяет открыть именованный канал без ожидания и проверить тип. */
         int flags = slash == NULL ? O_NONBLOCK : O_DIRECTORY;
         fd = openat(directory, path, O_RDONLY | O_NOFOLLOW | flags);
         if (fd < 0 || slash == NULL) {
@@ -307,6 +330,7 @@ static const char *content_type(const char *path) {
     return "application/octet-stream";
 }
 
+/* Читаем файл порциями в пределах размера, объявленного в Content-Length. */
 static void send_file(int client, int file, uintmax_t remaining) {
     char buffer[16384];
     while (remaining > 0) {
@@ -328,6 +352,7 @@ static void send_file(int client, int file, uintmax_t remaining) {
 }
 
 static void serve_client(int client, int root) {
+    /* Тайм-аут относится к отдельному вызову чтения или записи. */
     struct timeval timeout = {.tv_sec = IO_TIMEOUT};
     if (setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0 ||
         setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0) {
@@ -352,6 +377,7 @@ static void serve_client(int client, int root) {
         return;
     }
 
+    /* Разделяем первую строку на метод, путь и версию внутри буфера запроса. */
     char *line_end = strstr(request, "\r\n");
     *line_end = '\0';
     char *target = strchr(request, ' ');
@@ -378,6 +404,7 @@ static void serve_client(int client, int root) {
         return;
     }
 
+    /* Тип определяем заранее, потому что open_file() разбивает путь на части. */
     const char *type = content_type(target[1] ? target + 1 : "index.html");
     int file = open_file(root, target + 1);
     if (file < 0) {
@@ -399,6 +426,7 @@ static void serve_client(int client, int root) {
         return;
     }
 
+    /* Проверяем тип и размер именно открытого файла перед ответом 200 OK. */
     struct stat info;
     if (fstat(file, &info) < 0) {
         syslog(LOG_ERR, "fstat: %s", strerror(errno));
@@ -448,6 +476,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
+    /* Открытый корень сайта остаётся доступен после chdir("/") и fork(). */
     const char *root_path = optind < argc ? argv[optind] : "www";
     int root = open(root_path, O_RDONLY | O_DIRECTORY);
     if (root < 0) {
@@ -455,6 +484,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
+    /* Слушающий сокет остаётся у главного процесса на весь срок работы. */
     int listener = socket(AF_INET, SOCK_STREAM, 0);
     int reuse = 1;
     if (listener < 0 || setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0 ||
@@ -484,14 +514,20 @@ int main(int argc, char **argv) {
         }
         pid_t worker = fork();
         if (worker == 0) {
+            /* Потомку нужен только клиентский сокет для обмена данными. */
             close(listener);
             serve_client(client, root);
             close(client);
+            /* _exit() завершает процесс без сброса унаследованных буферов stdio. */
             _exit(EXIT_SUCCESS);
         }
         if (worker < 0) {
             syslog(LOG_ERR, "fork client: %s", strerror(errno));
         }
+        /*
+         * Родитель закрывает копию client даже при ошибке fork(), чтобы
+         * соединение не оставалось открытым после выхода потомка.
+         */
         close(client);
     }
 }
